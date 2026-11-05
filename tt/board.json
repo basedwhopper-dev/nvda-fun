@@ -1,0 +1,53 @@
+{
+  "updated": "2026-11-05T22:15:53.756Z",
+  "rows": [
+    {
+      "name": "Duke",
+      "time": 20.23,
+      "track": "aisle-circuit",
+      "trackName": "Aisle Circuit",
+      "racer": "gld",
+      "racerName": "GLD"
+    },
+    {
+      "name": "Duke",
+      "time": 29.4,
+      "track": "fan-flats",
+      "trackName": "Fan Flats",
+      "racer": "xrp",
+      "racerName": "XRP"
+    },
+    {
+      "name": "Duke",
+      "time": 20.82,
+      "track": "heat-castle",
+      "trackName": "Heat Castle",
+      "racer": "aapl",
+      "racerName": "AAPL"
+    },
+    {
+      "name": "Duke",
+      "time": 22,
+      "track": "pit-chicane",
+      "trackName": "Pit Chicane",
+      "racer": "eth",
+      "racerName": "ETH"
+    },
+    {
+      "name": "Duke",
+      "time": 26.79,
+      "track": "rack-oval",
+      "trackName": "Rack Oval",
+      "racer": "doge",
+      "racerName": "DOGE"
+    },
+    {
+      "name": "Duke",
+      "time": 37.91,
+      "track": "rainbow-bus",
+      "trackName": "Rainbow Bus",
+      "racer": "of",
+      "racerName": "Orgasm Factory"
+    }
+  ]
+}

@@ -1,0 +1,2225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rack Prix</title>
+<link rel="stylesheet" href="nvda.css">
+<style>
+  html, body { height: 100%; margin: 0; overflow: hidden; background: #07080c; }
+  canvas { display: block; width: 100%; height: 100%; }
+  .top {
+    position: fixed; left: 0; right: 0; top: 0; z-index: 2;
+    display: flex; justify-content: space-between; gap: 12px; padding: 10px 14px; pointer-events: none;
+  }
+  a.back { pointer-events: auto; color: var(--green); text-decoration: none; font-size: 13px; }
+  .stat { color: #fff; font-weight: 800; font-size: 22px; text-shadow: 0 2px 0 #000; }
+  .sub { color: #c5d0b8; font-size: 13px; }
+  .help { position: fixed; left: 14px; right: 14px; bottom: 8px; color: #8d9786; font-size: 12px; pointer-events: none; z-index: 2; }
+  .overlay {
+    position: fixed; inset: 0; z-index: 3; display: flex; align-items: center; justify-content: center;
+    background: rgba(5,6,8,0.62); padding: 18px;
+  }
+  .overlay.hidden { display: none; }
+  .card {
+    width: min(760px, 100%);
+    max-height: min(86vh, 820px);
+    overflow: auto;
+    background: #10140a; border: 4px solid #1a2214;
+    box-shadow: inset 0 0 0 1px rgba(118,185,0,0.55);
+    padding: 22px 22px 18px; text-align: center;
+  }
+  .card h1 { margin: 0 0 6px; color: var(--green); letter-spacing: 0.14em; font-size: 18px; }
+  .card p { margin: 0 0 12px; color: #d5deca; }
+  .choices { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+  .choices button { min-width: 132px; text-align: left; }
+  .choices button small { display: block; color: #9aa58c; font-size: 11px; font-weight: 500; }
+  .choices button.off { opacity: 0.38; }
+  .choices button.on { background: var(--green); color: #10140a; }
+  .choices button.on small { color: #243018; }
+  table.sheet { width: 100%; border-collapse: collapse; margin: 8px 0 14px; font-size: 14px; }
+  table.sheet td { padding: 5px 8px; border-bottom: 1px solid rgba(118,185,0,0.18); text-align: left; }
+  table.sheet tr.you td { color: #d6ff6a; font-weight: 800; }
+  button.primary { background: var(--green); color: #10140a; font-weight: 800; border: 0; }
+  .choices.roster { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .choices.roster button.face { padding: 0 0 8px; text-align: center; min-width: 0; background: #0c100c; }
+  .choices.roster button.face img { width: 100%; height: 112px; object-fit: cover; object-position: center 12%; display: block; background: #161616; }
+  .choices.roster button.face b { display: block; margin-top: 6px; letter-spacing: 0.04em; font-size: 12px; line-height: 1.2; }
+  .choices.roster button.face.on { box-shadow: inset 0 0 0 3px var(--green); background: #17200f; }
+  .roomcode { width: 100%; font-size: 34px; letter-spacing: 0.32em; color: var(--green); font-weight: 800; margin: 4px 0 8px; }
+  .roomlist { width: 100%; display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; text-align: left; }
+  .roomrow { display: flex; align-items: center; gap: 8px; color: #d5deca; }
+  .roomrow img { width: 42px; height: 42px; object-fit: cover; object-position: center 12%; background: #161616; }
+  .roomrow.you span { color: #d6ff6a; font-weight: 800; }
+  .roompick { width: 100%; margin: 8px 0; }
+  select.course, select.cc {
+    font: inherit; color: #d5deca; background: #0c100c; border: 1px solid rgba(118,185,0,0.45);
+    padding: 8px; margin: 4px;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="top">
+  <div>
+    <a class="back" href="games.html">NVDA</a>
+    <div class="sub" id="lap">Rack Prix</div>
+  </div>
+  <div style="text-align:right">
+    <div class="stat" id="place"></div>
+    <div class="sub" id="coins"></div>
+  </div>
+</div>
+<div class="help" id="help">W gas · A D steer · S brake · Shift hop · Space item · Esc pause</div>
+<div class="overlay" id="overlay">
+  <div class="card">
+    <h1 id="title">RACK PRIX</h1>
+    <p id="blurb"></p>
+    <div class="choices" id="choices"></div>
+  </div>
+</div>
+<script src="kart-tracks.js?v=16"></script>
+<script src="kart-items.js"></script>
+<script src="kart-drivers.js?v=9"></script>
+<script src="tt/board-client.js?v=1"></script>
+<script src="kart-net.js?v=1"></script>
+<script src="kart-prix.js"></script>
+<script src="kart-battle.js"></script>
+<script>
+(function () {
+  "use strict";
+  var canvas = document.getElementById("c");
+  var ctx = canvas.getContext("2d");
+  var keys = {};
+  var imgs = {};
+  var racers = [];
+  var boxes = [];
+  var traps = [];
+  var shots = [];
+  var track = null;
+  var phase = "menu";
+  var rearOn = false;
+  var count = 0;
+  var raceT = 0;
+  var ended = false;
+  var split = false;
+  var last = 0;
+  var session = null;
+  var career = loadCareer();
+  var netHost = false;
+  var inputSeq = 0;
+  var inputLog = [];
+  var lastSendAt = 0;
+  var lastSendKey = "";
+  var pendingSnap = null;
+  var snapAcc = 0;
+  var snapSeq = 0;
+  var lastSnapN = 0;
+  var viewBuf = {};
+  var showedResult = false;
+  var connectTimer = null;
+
+  function need(src) {
+    if (!imgs[src]) {
+      var im = new Image();
+      im.src = src;
+      imgs[src] = im;
+    }
+    return imgs[src];
+  }
+  var kartImg = need("game-art/kart-behind.png?v=2");
+  NVDA_DRIVERS.forEach(function (d) { need(d.sprite); need(d.face); });
+  var coinImg = need("game-art/prop-coin.png?v=1");
+  var boxImg = need("game-art/item-box.png");
+  var rackImg = need("game-art/prop-rack.png?v=1");
+  var heatImg = need("game-art/prop-heat.png?v=1");
+  var horizonImg = need("game-art/race-horizon.jpg?v=1");
+  var asphaltImg = need("game-art/race-asphalt.jpg?v=1");
+  var worldPlain = need("game-art/world-plain.jpg?v=1");
+  var worldGhost = need("game-art/world-ghost.jpg?v=1");
+  var worldCastle = need("game-art/world-castle.jpg?v=1");
+  var worldRainbow = need("game-art/world-rainbow.jpg?v=1");
+  var roadPlain = need("game-art/road-plain.jpg?v=1");
+  var roadGhost = need("game-art/road-ghost.jpg?v=1");
+  var roadCastle = need("game-art/road-castle.jpg?v=1");
+  var roadRainbow = need("game-art/road-rainbow.jpg?v=1");
+  var yardImg = need("game-art/race-yard.jpg?v=1");
+  var pylonImg = need("game-art/race-pylon.png?v=2");
+  var wallImg = need("game-art/race-wall.png?v=1");
+  var plantImg = need("game-art/prop-plant.png?v=1");
+  var barImg = need("game-art/prop-low.png?v=1");
+  NVDA_ITEMS.forEach(function (it) { need(it.src); });
+
+  function loadCareer() {
+    try {
+      var raw = JSON.parse(localStorage.getItem("nvda-kart-career") || "null");
+      if (raw && raw.tt && raw.cups) return raw;
+    } catch (e) {}
+    return { unlock150: false, cups: {}, tt: {} };
+  }
+  function saveCareer() {
+    localStorage.setItem("nvda-kart-career", JSON.stringify(career));
+  }
+  function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  window.addEventListener("resize", resize);
+  resize();
+  window.addEventListener("keydown", function (e) {
+    keys[e.key.toLowerCase()] = true;
+    if (["arrowup", "arrowdown", "arrowleft", "arrowright", " "].indexOf(e.key.toLowerCase()) >= 0) e.preventDefault();
+    if (!e.repeat && e.key.toLowerCase() === "x" && !split && (phase === "race" || phase === "count")) rearOn = !rearOn;
+    if (e.key === "Escape" && (phase === "race" || phase === "count")) {
+      if (session && session.mode === "online" && !netHost && NVDA_NET.lobby) {
+        NVDA_NET.sendFast(NVDA_NET.lobby.hostId, { t: "pause" });
+      } else togglePause();
+    }
+  });
+  window.addEventListener("keyup", function (e) { keys[e.key.toLowerCase()] = false; });
+  window.addEventListener("error", function (e) {
+    var b = document.getElementById("blurb");
+    if (b) b.textContent = e.message || "Something in the race broke.";
+  });
+
+  function freshSession() {
+    return {
+      mode: "gp", cc: "100", driver: 0, p2driver: 1, p2: false,
+      cup: "green", trackId: "aisle-circuit", lives: NVDA_PRIX.lives,
+      raceIndex: 0, points: NVDA_PRIX.blank(), retry: false, cupOver: false,
+      lastPlace: 1, lastOrder: [], ttBest: false, ghost: null, trace: []
+    };
+  }
+  session = freshSession();
+
+  function ccMul() { return NVDA_PRIX.cc[session.cc] || 1; }
+  function lapsN() { return session.mode === "battle" ? 99 : NVDA_PRIX.laps; }
+  function wrap(d, total) {
+    total = total || (track ? track.total : 1);
+    d = ((d % total) + total) % total;
+    if (d > total / 2) d -= total;
+    return d;
+  }
+  function ord(n) {
+    var s = ["th", "st", "nd", "rd"];
+    var v = n % 100;
+    return n + (s[(v - 20) % 10] || s[v] || s[0]);
+  }
+  function progress(r) {
+    return r.lap * track.total + ((r.s % track.total) + track.total) % track.total;
+  }
+  function nearFrac(r, frac, window) {
+    var target = frac * track.total;
+    return Math.abs(wrap(r.s - target)) < window;
+  }
+  function roster() {
+    var all = NVDA_DRIVERS;
+    var n = all.length;
+    var start = session.driver;
+    if (start < 0 || start >= n) start = 0;
+    function fill(target, seed) {
+      var ids = seed.slice();
+      var k = 0;
+      while (ids.length < target && k < n * 3) {
+        var id = all[(start + k) % n].id;
+        if (ids.indexOf(id) < 0) ids.push(id);
+        k++;
+      }
+      return ids;
+    }
+    if (session.mode === "tt") return [all[start].id];
+    if (session.mode === "match") return [all[start].id, all[session.p2driver % n].id];
+    if (session.mode === "battle") {
+      var seed = [all[start].id];
+      if (session.p2) seed.push(all[session.p2driver % n].id);
+      return fill(4, seed);
+    }
+    return fill(Math.min(8, n), [all[start].id]);
+  }
+  function buildPickups() {
+    boxes = [];
+    if (session.mode === "tt") return;
+    var nBox = track.battle ? 5 : 7;
+    var nCoin = track.battle ? 0 : 14;
+    var i;
+    for (i = 0; i < nBox; i++) {
+      boxes.push({ s: track.total * ((i + 0.37) / nBox), lane: i % 2 ? 0.38 : -0.38, cool: 0, coin: false });
+    }
+    for (i = 0; i < nCoin; i++) {
+      boxes.push({ s: track.total * ((i + 0.08) / nCoin), lane: (i % 3 - 1) * 0.28, cool: 0, coin: true });
+    }
+  }
+  function makeRacer(id, index, gap) {
+    var d = nvdaDriver(id);
+    var human = index === 0 || (index === 1 && (session.mode === "match" || (session.mode === "battle" && session.p2)));
+    var lane = 0;
+    if (session.mode === "match") lane = index === 0 ? -0.28 : 0.28;
+    else if (index > 0) lane = index % 2 ? 0.26 : -0.26;
+    return {
+      slot: index, driverId: id, name: d.name, hue: d.hue,
+      top: d.top, accel: d.accel, grip: d.grip, weight: d.weight,
+      you: index === 0, human: human, pad: index === 0 ? 1 : 2,
+      s: index * gap, lane: lane, speed: 0,
+      coins: session.mode === "tt" || session.mode === "online" ? 0 : session.mode === "match" ? 3 : (index === 0 ? 0 : 1),
+      item: null, rolling: 0, rollN: 0, boost: 0, spin: 0, star: 0, small: 0, hop: 0, hopMax: 0, scale: 1,
+      lap: 0, finished: false, placeDone: 0, out: false, wasItem: false, hazardCd: 0, touchCd: 0, hold: 0,
+      balloons: session.mode === "battle" ? NVDA_BATTLE.balloons : 0,
+      remote: false, peerId: null, netIn: null, ack: 0, viewOn: false
+    };
+  }
+  function attachGhost() {
+    var g = session.ghost;
+    if (session.mode !== "tt" || !g || !g.samples || !g.samples.length) return;
+    var ghost = makeRacer(g.driverId || racers[0].driverId, racers.length, 0);
+    ghost.human = false;
+    ghost.you = false;
+    ghost.ghost = true;
+    ghost.name = g.name || "Ghost";
+    ghost.ghostRun = g.samples;
+    ghost.s = g.samples[0][1];
+    ghost.lane = g.samples[0][2];
+    ghost.coins = 0;
+    racers.push(ghost);
+  }
+  function ghostFrame(samples, t) {
+    var a = samples[0];
+    if (t <= a[0]) return { s: a[1], lane: a[2] };
+    var i;
+    for (i = 1; i < samples.length; i++) {
+      var b = samples[i];
+      if (t <= b[0]) {
+        var u = (t - a[0]) / ((b[0] - a[0]) || 1);
+        return { s: a[1] + (b[1] - a[1]) * u, lane: a[2] + (b[2] - a[2]) * u };
+      }
+      a = b;
+    }
+    return { s: a[1], lane: a[2] };
+  }
+  function noteTrace() {
+    if (session.mode !== "tt" || phase !== "race") return;
+    var you = youRacer();
+    if (!you || you.finished) return;
+    if (!session.trace) session.trace = [];
+    if (session.trace.length >= 1200) return;
+    if (session.traceAt != null && raceT - session.traceAt < 0.1) return;
+    session.traceAt = raceT;
+    session.trace.push([
+      Math.round(raceT * 100) / 100,
+      Math.round(you.s * 10) / 10,
+      Math.round(you.lane * 1000) / 1000
+    ]);
+  }
+  function ownGhost(trackId) {
+    try {
+      var all = JSON.parse(localStorage.getItem("nvda-tt-ghosts") || "{}");
+      return all[trackId] || null;
+    } catch (e) {}
+    return null;
+  }
+  function saveOwnGhost(trackId, pack) {
+    var all = {};
+    try { all = JSON.parse(localStorage.getItem("nvda-tt-ghosts") || "{}"); } catch (e) {}
+    var prev = all[trackId];
+    if (prev && prev.time <= pack.time) return;
+    all[trackId] = pack;
+    try { localStorage.setItem("nvda-tt-ghosts", JSON.stringify(all)); } catch (e2) {}
+  }
+  function youRacer() {
+    var i;
+    for (i = 0; i < racers.length; i++) if (racers[i].you) return racers[i];
+    return racers[0];
+  }
+  function racerS(r) { return r && r.viewOn ? r.viewS : r.s; }
+  function racerLane(r) { return r && r.viewOn ? r.viewLane : r.lane; }
+  function kartFor(r) {
+    var d = nvdaDriver(r && r.driverId);
+    return need((d && d.sprite) || "game-art/kart-behind.png?v=2");
+  }
+  function begin() {
+    var cupTracks = nvdaCupTracks(session.cup);
+    if (session.mode === "gp") session.trackId = cupTracks[session.raceIndex].id;
+    track = nvdaTrack(session.trackId);
+    var ids = roster();
+    var gap = session.mode === "match" ? 12 : session.mode === "battle" ? 28 : Math.min(72, track.total * 0.028);
+    racers = ids.map(function (id, i) { return makeRacer(id, i, gap); });
+    buildPickups();
+    traps = [];
+    shots = [];
+    count = 3.4;
+    raceT = 0;
+    ended = false;
+    rearOn = false;
+    session.trace = [];
+    session.traceAt = -1;
+    attachGhost();
+    if (session.mode === "gp" || session.mode === "online") {
+      racers.forEach(function (r, i) { r.coins = coinsForRank(racers.length - i); });
+    }
+    split = session.mode === "match" || (session.mode === "battle" && session.p2);
+    phase = "count";
+    document.getElementById("overlay").classList.add("hidden");
+    helpFor();
+  }
+  function helpFor() {
+    var p2 = split ? "    P2: arrows, K hop, L item" : "";
+    document.getElementById("help").textContent = "W gas · A D steer · S brake · Shift slide · Space item · X behind · Esc pause" + p2;
+  }
+  function controls(r) {
+    if (r.remote) return r.netIn || { gas: false, brake: false, left: false, right: false, hop: false, item: false };
+    if (!r.human) return cpuMind(r);
+    var solo = !split;
+    if (r.pad === 1) {
+      return {
+        gas: !!(keys["w"] || (solo && keys["arrowup"])),
+        brake: !!(keys["s"] || (solo && keys["arrowdown"])),
+        left: !!(keys["a"] || (solo && keys["arrowleft"])),
+        right: !!(keys["d"] || (solo && keys["arrowright"])),
+        hop: !!(keys["shift"]),
+        item: !!(keys[" "])
+      };
+    }
+    return {
+      gas: !!keys["arrowup"],
+      brake: !!keys["arrowdown"],
+      left: !!keys["arrowleft"],
+      right: !!keys["arrowright"],
+      hop: !!keys["k"],
+      item: !!keys["l"]
+    };
+  }
+  function cpuMind(r) {
+    var aim = Math.sin((r.s + r.slot * 40) * 0.012) * 0.22;
+    if (Math.abs(r.lane) > driveHalf() * 0.8) aim = 0;
+    var hop = false;
+    track.pipes.forEach(function (f) { if (nearFrac(r, f, 34)) hop = true; });
+    track.jumps.forEach(function (f) { if (nearFrac(r, f, 28)) hop = true; });
+    var close = false;
+    racers.forEach(function (o) {
+      if (o !== r && !o.out && wrap(o.s - r.s) > 0 && wrap(o.s - r.s) < 90) close = true;
+    });
+    var use = !!(r.item && r.hold > 1.2 && (close || r.hold > 3.5));
+    return { gas: true, brake: false, left: r.lane > aim + 0.04, right: r.lane < aim - 0.04, hop: hop, item: use };
+  }
+  function blip(freq) {
+    try {
+      var ac = blip.ac || (blip.ac = new AudioContext());
+      var o = ac.createOscillator();
+      var g = ac.createGain();
+      o.type = "square";
+      o.frequency.value = freq;
+      g.gain.value = 0.025;
+      o.connect(g); g.connect(ac.destination);
+      o.start();
+      g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.05);
+      o.stop(ac.currentTime + 0.06);
+    } catch (e) {}
+  }
+  function loseBalloon(r) {
+    if (r.out || r.star > 0 || session.mode !== "battle") return;
+    r.balloons -= 1;
+    r.spin = 0.55;
+    r.speed *= 0.4;
+    blip(180);
+    if (r.balloons <= 0) r.out = true;
+  }
+  function coinsForRank(rank) {
+    if (rank <= 2) return 2;
+    if (rank <= 4) return 3;
+    if (rank <= 6) return 4;
+    return 5;
+  }
+  function payCoins(r, cost) {
+    if (r.star > 0 || r.out) return;
+    if (session.mode === "battle") { loseBalloon(r); return; }
+    if (session.mode === "tt") { r.spin = 0.45; r.speed *= 0.55; return; }
+    var had = r.coins;
+    r.coins = Math.max(0, had - cost);
+    if (had <= 0) r.spin = Math.max(r.spin, 0.65);
+    r.speed *= 0.55;
+  }
+  function bump(r) { payCoins(r, 1); }
+  function hitItem(r) { payCoins(r, 4); }
+  function useItem(r) {
+    if (!r.item || r.rolling > 0 || r.spin > 0 || r.out) return;
+    var it = r.item;
+    r.item = null;
+    blip(520);
+    if (it === "boost") r.boost = 1.25;
+    else if (it === "star") r.star = 2.4;
+    else if (it === "feather") { r.hop = 0.72; r.hopMax = 0.72; }
+    else if (it === "cable") traps.push({ s: r.s - 16, lane: r.lane, life: 9 });
+    else if (it === "shell") shots.push({ s: r.s + 18, lane: r.lane, life: 2.6, owner: r, home: false });
+    else if (it === "home") shots.push({ s: r.s + 18, lane: r.lane, life: 3.4, owner: r, home: true });
+    else if (it === "bolt") {
+      racers.forEach(function (o) {
+        if (o !== r && !o.out) { o.small = 2.1; o.item = null; hitItem(o); }
+      });
+    } else if (it === "ghost") {
+      var best = null;
+      var bestD = 1e9;
+      racers.forEach(function (o) {
+        if (o === r || !o.item) return;
+        var d = Math.abs(wrap(o.s - r.s));
+        if (d < bestD) { bestD = d; best = o; }
+      });
+      r.star = 1.1;
+      if (best) { r.item = best.item; best.item = null; }
+    }
+  }
+  function hazards(r, dt) {
+    r.hazardCd = Math.max(0, r.hazardCd - dt);
+    if (r.hazardCd > 0 || r.out) return;
+    track.oils.forEach(function (f) {
+      if (nearFrac(r, f, 12) && Math.abs(r.lane) < 0.28) {
+        r.spin = Math.max(r.spin, 0.22);
+        r.speed *= 0.82;
+        r.hazardCd = 0.85;
+      }
+    });
+    track.pipes.forEach(function (f) {
+      if (nearFrac(r, f, 9) && r.hop < 0.18 && Math.abs(r.lane) < 0.22) {
+        r.speed *= 0.72;
+        r.spin = Math.max(r.spin, 0.28);
+        r.hazardCd = 0.7;
+      }
+    });
+    track.jumps.forEach(function (f) {
+      if (nearFrac(r, f, 16) && r.hop < 0.12) { r.hop = 0.48; r.hopMax = 0.48; }
+    });
+  }
+  function groundKind() {
+    if (!track || !track.theme) return "sand";
+    if (track.theme.surface) return track.theme.surface;
+    var id = track.id;
+    var theme = track.theme.id;
+    if (theme === "rainbow") return "abyss";
+    if (theme === "castle") return "lava";
+    if (id === "fog-gate") return "ice";
+    if (theme === "ghost") return "abyss";
+    if (id === "spillway") return "mud";
+    if (id === "fan-flats") return "shallows";
+    if (theme === "plain") return "grass";
+    return "sand";
+  }
+  function groundMul(kind) {
+    if (kind === "sand") return 0.62;
+    if (kind === "grass") return 0.55;
+    if (kind === "mud") return 0.4;
+    if (kind === "shallows") return 0.48;
+    if (kind === "ice") return 0.88;
+    return 1;
+  }
+  function rescue(r) {
+    if (r.lift > 0) return;
+    r.lift = 1.35;
+    r.lane = 0;
+    r.nose = 0;
+    r.slide = 0;
+    r.wet = 0;
+    r.speed *= 0.35;
+    if (session.mode !== "tt" && session.mode !== "battle") {
+      var had = r.coins;
+      r.coins = Math.max(0, had - 2);
+    }
+    blip(140);
+  }
+  function rollFor(r) {
+    var rank = 1;
+    standings().forEach(function (o, i) { if (o === r) rank = i + 1; });
+    var band = r.lap < 1 ? 0 : rank <= 1 ? 0 : rank <= 4 ? 1 : 2;
+    var theme = track && track.theme ? track.theme.id : "circuit";
+    var feather = theme === "circuit" || theme === "plain" ? [0, 0, 0] : [2, 3, 4];
+    var pool = [
+      ["boost", [4, 2, 6]],
+      ["feather", feather],
+      ["star", [1, 1, 3]],
+      ["cable", [5, 6, 2]],
+      ["shell", [4, 5, 2]],
+      ["home", [5, 2, 6]]
+    ];
+    if (session.mode !== "battle") pool.push(["bolt", [1, 1, 2]]);
+    if (session.mode === "battle" || session.mode === "match") pool.push(["ghost", [4, 4, 4]]);
+    var bag = [];
+    pool.forEach(function (row) {
+      var n = row[1][band];
+      var k;
+      for (k = 0; k < n; k++) bag.push(row[0]);
+    });
+    if (!bag.length) return "cable";
+    return bag[Math.floor(Math.random() * bag.length)];
+  }
+  function driveBody(r, dt, inn) {
+    if (r.finished) return;
+    if (r.lift > 0) {
+      r.lift -= dt;
+      r.lane += (0 - r.lane) * Math.min(1, dt * 8);
+      r.speed *= 0.9;
+      return;
+    }
+    var coinBonus = session.mode === "tt" ? 0 : r.coins * 0.04;
+    var top = r.top * ccMul() * (1 + coinBonus) * (r.boost > 0 ? 1.42 : 1) * (r.small > 0 ? 0.84 : 1);
+    var st = (inn.right ? 1 : 0) - (inn.left ? 1 : 0);
+    if (r.spin > 0) st = 0;
+    if (r.slide == null) r.slide = 0;
+    if (r.wet == null) r.wet = 0;
+    var hopping = inn.hop && r.hop === 0 && r.spin === 0 && r.slide <= 0;
+    if (hopping) { r.hop = 0.28; r.hopMax = 0.28; }
+    var wantSlide = inn.hop && Math.abs(st) > 0 && r.speed > 7 && r.spin === 0 && (r.hop > 0 || r.slide > 0);
+    if (wantSlide) {
+      r.slide += dt;
+      r.hop = Math.max(r.hop, 0.06);
+    } else if (r.slide > 0) {
+      if (r.slide >= 1.15) {
+        r.boost = Math.max(r.boost, 1.05);
+        blip(880);
+      }
+      r.slide = 0;
+    }
+    if (r.nose == null) r.nose = 0;
+    if (r.speed > 1.5 && track) {
+      var look = 64;
+      var travel = r.speed * dt * 30;
+      var dRoad = nvdaBend(track, r.s, look) * (travel / look);
+      var cap = dt * 1.8;
+      if (dRoad > cap) dRoad = cap;
+      if (dRoad < -cap) dRoad = -cap;
+      if (r.slide > 0) dRoad *= 0.5;
+      if (r.spin === 0) r.nose += st * dt * (r.slide > 0 ? 2.8 : 2.2);
+      r.nose -= dRoad;
+      if (r.nose > 1.2) r.nose = 1.2;
+      if (r.nose < -1.2) r.nose = -1.2;
+      var slip = r.slide > 0 ? 1.6 : 2.8;
+      r.lane += Math.sin(r.nose) * dt * slip * Math.min(1, r.speed / 8);
+    } else if (r.spin === 0) {
+      r.nose += st * dt * 2.2;
+    }
+    var road = curbLane();
+    var kind = groundKind();
+    var drop = kind === "lava" || kind === "abyss";
+    var limit = road + (drop ? 0.1 : 0.42);
+    var airborne = r.hop > 0.12;
+    r.edgeCd = Math.max(0, (r.edgeCd || 0) - dt);
+    if (!airborne && Math.abs(r.lane) > road) {
+      if (Math.abs(r.lane) > limit) rescue(r);
+      else if (r.edgeCd <= 0) {
+        r.speed *= drop ? 0.45 : 0.7;
+        r.edgeCd = 0.45;
+        blip(110);
+      }
+    }
+    if (inn.gas && r.spin === 0) r.speed += r.accel * ccMul() * dt;
+    else if (inn.gas) r.speed += r.accel * ccMul() * dt * 0.6;
+    else r.speed -= 14 * dt;
+    if (inn.brake) r.speed -= 26 * dt;
+    if (!airborne && Math.abs(r.lane) > road && r.boost <= 0) {
+      var capSpeed = top * groundMul(kind);
+      if (r.speed > capSpeed) r.speed -= (r.speed - capSpeed) * Math.min(1, dt * 7);
+    }
+    r.speed = Math.max(0, Math.min(top, r.speed));
+    var before = ((r.s % track.total) + track.total) % track.total;
+    r.s += r.speed * dt * 30;
+    var after = ((r.s % track.total) + track.total) % track.total;
+    if (after < before && r.speed > 2) r.lap += 1;
+  }
+  function predictFrame(r, dt, inn) {
+    if (!r || r.out) return;
+    r.boost = Math.max(0, r.boost - dt);
+    r.spin = Math.max(0, r.spin - dt);
+    r.star = Math.max(0, r.star - dt);
+    r.small = Math.max(0, r.small - dt);
+    r.hop = Math.max(0, r.hop - dt);
+    driveBody(r, dt, inn);
+  }
+  function readLocal() {
+    return {
+      gas: !!(keys["w"] || keys["arrowup"]),
+      brake: !!(keys["s"] || keys["arrowdown"]),
+      left: !!(keys["a"] || keys["arrowleft"]),
+      right: !!(keys["d"] || keys["arrowright"]),
+      hop: !!keys["shift"],
+      item: !!keys[" "]
+    };
+  }
+  function stepOne(r, dt) {
+    if (r.out) return;
+    if (r.ghost) {
+      var g = ghostFrame(r.ghostRun, raceT);
+      r.s = g.s;
+      r.lane = g.lane;
+      r.speed = 12;
+      r.lap = track ? Math.floor(r.s / track.total) : 0;
+      return;
+    }
+    var inn = controls(r);
+    r.boost = Math.max(0, r.boost - dt);
+    r.spin = Math.max(0, r.spin - dt);
+    r.star = Math.max(0, r.star - dt);
+    r.small = Math.max(0, r.small - dt);
+    r.hop = Math.max(0, r.hop - dt);
+    if (r.scale == null) r.scale = 1;
+    var wantScale = r.small > 0 ? 0.8 : 1;
+    r.scale += (wantScale - r.scale) * Math.min(1, dt * 4);
+    r.touchCd = Math.max(0, r.touchCd - dt);
+    r.hold += dt;
+    if (r.rolling > 0) {
+      r.rolling -= dt;
+      r.rollN += dt * 16;
+      if (r.rolling <= 0) r.item = rollFor(r);
+    }
+    if (inn.item && !r.wasItem) { useItem(r); r.hold = 0; }
+    r.wasItem = !!inn.item;
+    if (r.finished) return;
+    driveBody(r, dt, inn);
+    hazards(r, dt);
+    if (session.mode !== "battle" && r.lap >= lapsN() && !r.finished) {
+      r.finished = true;
+      r.placeDone = racers.filter(function (o) { return o.finished; }).length;
+      r.speed = 0;
+    }
+  }
+  function pickups(dt) {
+    if (session.mode === "tt") return;
+    boxes.forEach(function (b) {
+      b.cool = Math.max(0, b.cool - dt);
+      if (b.cool > 0) return;
+      racers.forEach(function (r) {
+        if (r.out || r.finished || r.item || r.rolling > 0) return;
+        if (Math.abs(wrap(r.s - b.s)) < 20 && Math.abs(r.lane - b.lane) < 0.48) {
+          if (b.coin) {
+            r.coins = Math.min(10, r.coins + 1);
+            blip(740);
+          } else {
+            r.rolling = 1.05;
+            r.rollN = 0;
+            blip(300);
+          }
+          b.cool = b.coin ? 5 : 7;
+        }
+      });
+    });
+  }
+  function weapons(dt) {
+    traps = traps.filter(function (t) {
+      t.life -= dt;
+      racers.forEach(function (r) {
+        if (t.life <= 0 || r.star > 0) return;
+        if (Math.abs(wrap(r.s - t.s)) < 14 && Math.abs(r.lane - t.lane) < 0.34) {
+          hitItem(r);
+          t.life = 0;
+        }
+      });
+      return t.life > 0;
+    });
+    shots = shots.filter(function (s) {
+      s.life -= dt;
+      s.s += dt * (s.home ? 78 : 96);
+      if (s.home) {
+        var prey = null;
+        var preyD = 1e9;
+        racers.forEach(function (r) {
+          if (r === s.owner || r.out) return;
+          var d = wrap(r.s - s.s);
+          if (d > 0 && d < preyD) { preyD = d; prey = r; }
+        });
+        if (prey) s.lane += (prey.lane - s.lane) * Math.min(1, dt * 4);
+        var shotWall = track.half + 0.2;
+        if (s.lane > shotWall) s.lane = shotWall;
+        if (s.lane < -shotWall) s.lane = -shotWall;
+      }
+      racers.forEach(function (r) {
+        if (s.life <= 0 || r === s.owner || r.star > 0) return;
+        if (Math.abs(wrap(r.s - s.s)) < 16 && Math.abs(r.lane - s.lane) < 0.36) {
+          if (session.mode === "battle") loseBalloon(r);
+          else hitItem(r);
+          s.life = 0;
+        }
+      });
+      return s.life > 0;
+    });
+    for (var i = 0; i < racers.length; i++) {
+      for (var j = i + 1; j < racers.length; j++) {
+        var a = racers[i], b = racers[j];
+        if (a.ghost || b.ghost || a.out || b.out || a.touchCd > 0 || b.touchCd > 0) continue;
+        if (Math.abs(wrap(a.s - b.s)) < 8 && Math.abs(a.lane - b.lane) < 0.22) {
+          if (a.star > 0) bump(b);
+          else if (b.star > 0) bump(a);
+          else { bump(a); bump(b); }
+          a.touchCd = 0.45;
+          b.touchCd = 0.45;
+          var push = a.lane <= b.lane ? -0.08 : 0.08;
+          a.lane += push;
+          b.lane -= push;
+        }
+      }
+    }
+  }
+  function standings() {
+    return racers.filter(function (r) { return !r.ghost; }).slice().sort(function (a, b) {
+      if (a.finished && !b.finished) return -1;
+      if (!a.finished && b.finished) return 1;
+      if (a.finished && b.finished) return a.placeDone - b.placeDone;
+      return progress(b) - progress(a);
+    });
+  }
+  function maybeEnd() {
+    if (ended || phase !== "race") return;
+    if (session.mode === "online") {
+      var humans = racers.filter(function (r) { return r.human; });
+      var done = humans.filter(function (r) { return r.finished; });
+      if (done.length && !session.firstFinishAt) session.firstFinishAt = raceT;
+      if ((humans.length && done.length === humans.length) || (session.firstFinishAt && raceT - session.firstFinishAt > 25)) {
+        ended = true;
+        finishRace();
+      }
+      return;
+    }
+    if (session.mode === "battle") {
+      if (NVDA_BATTLE.alive(racers) <= 1) { ended = true; finishRace(); }
+      return;
+    }
+    if (session.mode === "match") {
+      if (racers.some(function (r) { return r.human && r.finished; })) { ended = true; finishRace(); }
+      return;
+    }
+    if (racers[0] && racers[0].finished) { ended = true; finishRace(); }
+  }
+  function expandRoster(humans) {
+    var chosen = humans.map(function (h) { return h.driver; });
+    var extras = [];
+    var k = 0;
+    while (chosen.length + extras.length < 8 && k < NVDA_DRIVERS.length * 3) {
+      var id = NVDA_DRIVERS[k % NVDA_DRIVERS.length].id;
+      if (chosen.indexOf(id) < 0 && extras.indexOf(id) < 0) extras.push(id);
+      k++;
+    }
+    var out = humans.map(function (h) { return { id: h.id, driver: h.driver, human: true }; });
+    extras.forEach(function (id) { out.push({ id: null, driver: id, human: false }); });
+    var countOf = {};
+    out.forEach(function (p) { countOf[p.driver] = (countOf[p.driver] || 0) + 1; });
+    var used = {};
+    out.forEach(function (p, i) {
+      var d = nvdaDriver(p.driver);
+      used[p.driver] = (used[p.driver] || 0) + 1;
+      p.label = countOf[p.driver] > 1 ? d.name + " " + used[p.driver] : d.name;
+      p.slot = i;
+    });
+    return out;
+  }
+  function buildOnlineRace(go) {
+    session = freshSession();
+    session.mode = "online";
+    session.cc = go.cc || "100";
+    session.trackId = go.trackId || "aisle-circuit";
+    track = nvdaTrack(session.trackId) || nvdaTrack("aisle-circuit");
+    session.trackId = track.id;
+    var lineup = expandRoster(go.roster || []);
+    var gap = Math.min(72, track.total * 0.028);
+    racers = lineup.map(function (p, i) {
+      var r = makeRacer(p.driver, i, gap);
+      r.you = !!(p.id && p.id === NVDA_NET.id);
+      r.human = !!p.human;
+      r.remote = !!(p.human && p.id !== NVDA_NET.id);
+      r.peerId = p.id;
+      r.name = p.label;
+      return r;
+    });
+    buildPickups();
+    traps = [];
+    shots = [];
+    count = 3.4;
+    raceT = 0;
+    ended = false;
+    split = false;
+    showedResult = false;
+    viewBuf = {};
+    inputLog = [];
+    inputSeq = 0;
+    lastSnapN = 0;
+    pendingSnap = null;
+    helpFor();
+  }
+  function armOnline(go) {
+    if (connectTimer) clearInterval(connectTimer);
+    netHost = !!NVDA_NET.host;
+    buildOnlineRace(go);
+    phase = "connect";
+    document.getElementById("overlay").classList.add("hidden");
+    if (!netHost) return;
+    var waitFrom = performance.now();
+    connectTimer = setInterval(function () {
+      var need = 0;
+      racers.forEach(function (r) { if (r.remote) need++; });
+      if (NVDA_NET.openCount() >= need || performance.now() - waitFrom > 4000) {
+        clearInterval(connectTimer);
+        connectTimer = null;
+        count = 3.4;
+        phase = "count";
+      }
+    }, 80);
+  }
+  function copyFields(r, src) {
+    var fields = ["s", "lane", "nose", "speed", "hop", "hopMax", "boost", "spin", "star", "small", "item", "rolling", "coins", "lap", "finished", "out", "balloons", "placeDone"];
+    var i;
+    for (i = 0; i < fields.length; i++) if (src[fields[i]] !== undefined) r[fields[i]] = src[fields[i]];
+  }
+  function pushView(slot, src) {
+    var buf = viewBuf[slot] || (viewBuf[slot] = []);
+    var now = performance.now();
+    if (buf.length && now < buf[buf.length - 1].t) return;
+    buf.push({ t: now, s: src.s, lane: src.lane, hop: src.hop || 0 });
+    while (buf.length > 30) buf.shift();
+  }
+  function applySnap(msg) {
+    if (!msg || msg.n == null || msg.n <= lastSnapN) return;
+    lastSnapN = msg.n;
+    var next = msg.phase || phase;
+    if (msg.raceT != null) raceT = msg.raceT;
+    if (msg.count != null) count = msg.count;
+    if (msg.boxes) msg.boxes.forEach(function (cool, i) { if (boxes[i]) boxes[i].cool = cool; });
+    if (msg.traps) traps = msg.traps.map(function (t) { return { s: t.s, lane: t.lane, life: t.life }; });
+    if (msg.shots) shots = msg.shots.map(function (s) { return { s: s.s, lane: s.lane, life: s.life, home: !!s.home, owner: null }; });
+    (msg.racers || []).forEach(function (src, i) {
+      var r = racers[i];
+      if (!r) return;
+      if (r.you && next === "race") {
+        copyFields(r, src);
+        var ack = src.ack || 0;
+        var pending = inputLog.filter(function (p) { return p.seq > ack; });
+        inputLog = pending.slice();
+        pending.forEach(function (p) { predictFrame(r, p.dt, p); });
+      } else {
+        copyFields(r, src);
+        if (!r.you) pushView(i, src);
+      }
+    });
+    if (next === "pause" && phase !== "pause") {
+      openMenu("PAUSED", netHost ? (track ? track.name : "") : "The host has the race held.", netHost ? [
+        choice("Resume", "", function () {
+          phase = "race";
+          document.getElementById("overlay").classList.add("hidden");
+        }),
+        choice("Quit", "", function () { NVDA_NET.leave(); menuMode(); })
+      ] : []);
+      phase = "pause";
+    }
+    if (next !== "pause" && phase === "pause") document.getElementById("overlay").classList.add("hidden");
+    phase = next;
+    if (next === "results" && !showedResult) {
+      showedResult = true;
+      ended = true;
+      showResults(standings());
+    }
+  }
+  function noteInput(inn, dt, record) {
+    inputSeq += 1;
+    if (record) {
+      inputLog.push({
+        seq: inputSeq, dt: dt,
+        gas: !!inn.gas, brake: !!inn.brake, left: !!inn.left, right: !!inn.right, hop: !!inn.hop, item: !!inn.item
+      });
+      if (inputLog.length > 90) inputLog.splice(0, inputLog.length - 90);
+    }
+    var key = [inn.gas, inn.brake, inn.left, inn.right, inn.hop, inn.item].join("");
+    var now = performance.now();
+    if (key === lastSendKey && now - lastSendAt < 33) return;
+    lastSendKey = key;
+    lastSendAt = now;
+    var hostId = NVDA_NET.lobby && NVDA_NET.lobby.hostId;
+    if (hostId) {
+      NVDA_NET.sendFast(hostId, {
+        t: "in", seq: inputSeq,
+        gas: !!inn.gas, brake: !!inn.brake, left: !!inn.left, right: !!inn.right, hop: !!inn.hop, item: !!inn.item
+      });
+    }
+  }
+  function stepGuest(dt) {
+    var inn = readLocal();
+    if (pendingSnap) applySnap(pendingSnap);
+    pendingSnap = null;
+    var racing = phase === "race";
+    if (racing) {
+      raceT += dt;
+      predictFrame(youRacer(), dt, inn);
+    }
+    noteInput(inn, dt, racing);
+  }
+  function pumpSnap(dt) {
+    snapAcc += dt;
+    if (snapAcc < 0.05) return;
+    snapAcc = 0;
+    snapSeq += 1;
+    NVDA_NET.sendAll({
+      t: "snap",
+      n: snapSeq,
+      phase: phase,
+      count: count,
+      raceT: raceT,
+      racers: racers.map(function (r) {
+        return {
+          s: r.s, lane: r.lane, nose: r.nose || 0, speed: r.speed, hop: r.hop, hopMax: r.hopMax || 0,
+          boost: r.boost, spin: r.spin, star: r.star, small: r.small,
+          item: r.item, rolling: r.rolling, coins: r.coins, lap: r.lap,
+          finished: !!r.finished, out: !!r.out, balloons: r.balloons || 0,
+          placeDone: r.placeDone || 0, ack: r.ack || 0
+        };
+      }),
+      boxes: boxes.map(function (b) { return b.cool; }),
+      traps: traps.map(function (t) { return { s: t.s, lane: t.lane, life: t.life }; }),
+      shots: shots.map(function (s) { return { s: s.s, lane: s.lane, life: s.life, home: !!s.home }; })
+    });
+  }
+  function stepHost(dt) {
+    if (phase === "pause" || phase === "results" || phase === "connect") {
+      pumpSnap(dt);
+      return;
+    }
+    if (phase === "count") {
+      count -= dt;
+      racers.forEach(function (r) {
+        if (!r.human) return;
+        var gas = r.remote ? !!(r.netIn && r.netIn.gas) : !!(keys["w"] || keys["arrowup"]);
+        if (gas) {
+          if (count > 0.55) r.tooSoon = true;
+          else if (count > 0 && count < 0.45 && !r.tooSoon) r.revved = true;
+        }
+      });
+      if (count <= 0) {
+        phase = "race";
+        racers.forEach(function (r) {
+          if (!r.human) return;
+          if (r.revved && !r.tooSoon) r.boost = 1.15;
+          if (r.tooSoon) r.spin = 0.8;
+        });
+      }
+      pumpSnap(dt);
+      return;
+    }
+    if (phase !== "race") return;
+    raceT += dt;
+    racers.forEach(function (r) { stepOne(r, dt); });
+    pickups(dt);
+    weapons(dt);
+    maybeEnd();
+    pumpSnap(dt);
+  }
+  function poseRemotes() {
+    var i;
+    if (!session || session.mode !== "online" || netHost) {
+      for (i = 0; i < racers.length; i++) racers[i].viewOn = false;
+      return;
+    }
+    var when = performance.now() - 110;
+    for (i = 0; i < racers.length; i++) {
+      var r = racers[i];
+      if (r.you) { r.viewOn = false; continue; }
+      var buf = viewBuf[r.slot];
+      if (!buf || !buf.length) { r.viewOn = false; continue; }
+      var a = buf[0];
+      var b = buf[buf.length - 1];
+      var k;
+      for (k = 0; k < buf.length - 1; k++) {
+        if (buf[k].t <= when && buf[k + 1].t >= when) { a = buf[k]; b = buf[k + 1]; break; }
+      }
+      if (buf[buf.length - 1].t < when) { a = buf[buf.length - 1]; b = a; }
+      var span = b.t - a.t;
+      var u = span > 1 ? (when - a.t) / span : 0;
+      if (u < 0) u = 0;
+      if (u > 1) u = 1;
+      r.viewOn = true;
+      r.viewS = a.s + wrap(b.s - a.s) * u;
+      r.viewLane = a.lane + (b.lane - a.lane) * u;
+      r.viewHop = a.hop + (b.hop - a.hop) * u;
+    }
+  }
+  function wireNet() {
+    NVDA_NET.onLobby = function () {
+      if (phase === "race" || phase === "count" || phase === "connect") return;
+      renderLobby();
+    };
+    NVDA_NET.onStatus = function (text) {
+      var blurb = document.getElementById("blurb");
+      if (blurb && text && (phase === "menu" || phase === "results")) blurb.textContent = text;
+    };
+    NVDA_NET.onGo = function (go) { armOnline(go); };
+    NVDA_NET.onFast = function (peerId, msg) {
+      if (netHost) {
+        if (msg.t === "pause" && (phase === "race" || phase === "count")) togglePause();
+        if (msg.t !== "in") return;
+        var r = null;
+        var i;
+        for (i = 0; i < racers.length; i++) if (racers[i].peerId === peerId) r = racers[i];
+        if (!r) return;
+        r.netIn = { gas: !!msg.gas, brake: !!msg.brake, left: !!msg.left, right: !!msg.right, hop: !!msg.hop, item: !!msg.item };
+        r.ack = msg.seq || 0;
+        return;
+      }
+      if (msg.t === "snap" && (!pendingSnap || msg.n > pendingSnap.n)) pendingSnap = msg;
+    };
+    NVDA_NET.onClose = function (peerId) {
+      if (peerId === "host") { menuMode(); return; }
+      if (!netHost || !peerId) return;
+      var i;
+      for (i = 0; i < racers.length; i++) {
+        if (racers[i].peerId === peerId) {
+          racers[i].remote = false;
+          racers[i].human = false;
+        }
+      }
+    };
+  }
+  function step(dt) {
+    if (session && session.mode === "online") {
+      if (netHost) stepHost(dt);
+      else stepGuest(dt);
+      return;
+    }
+    if (phase === "count") {
+      count -= dt;
+      var you = racers[0];
+      var gas = !!(keys["w"] || keys["arrowup"]);
+      if (gas) {
+        if (count > 0.55) session.tooSoon = true;
+        else if (count > 0 && count < 0.45 && !session.tooSoon) session.revved = true;
+      }
+      if (count <= 0) {
+        phase = "race";
+        if (session.revved && !session.tooSoon) you.boost = 1.15;
+        if (session.tooSoon) you.spin = 0.8;
+      }
+      return;
+    }
+    if (phase !== "race") return;
+    raceT += dt;
+    noteTrace();
+    racers.forEach(function (r) { stepOne(r, dt); });
+    pickups(dt);
+    weapons(dt);
+    maybeEnd();
+  }
+  function finishRace() {
+    phase = "results";
+    var order = standings();
+    session.lastOrder = order.map(function (r) { return r.slot; });
+    session.lastPlace = NVDA_PRIX.placeOf(session.lastOrder, youRacer() ? youRacer().slot : 0);
+    if (session.mode === "gp") {
+      if (session.lastPlace >= NVDA_PRIX.failFrom) {
+        session.lives -= 1;
+        session.retry = session.lives > 0;
+      } else {
+        session.points = NVDA_PRIX.add(session.points, session.lastOrder);
+        session.retry = false;
+        session.raceIndex += 1;
+        if (session.raceIndex >= nvdaCupTracks(session.cup).length) {
+          session.cupOver = true;
+          if (NVDA_PRIX.leader(session.points) === 0 || NVDA_PRIX.tied(session.points, 0)) {
+            career.cups[session.cup] = true;
+            var all = NVDA_CUPS.every(function (c) { return career.cups[c.id]; });
+            if (all) career.unlock150 = true;
+            saveCareer();
+          }
+        }
+      }
+    }
+    if (session.mode === "tt") {
+      var prev = career.tt[track.id];
+      session.ttBest = !prev || raceT < prev;
+      if (session.ttBest) {
+        career.tt[track.id] = raceT;
+        saveCareer();
+        var you = youRacer();
+        var savedName = "You";
+        try { savedName = localStorage.getItem("nvda-tt-name") || "You"; } catch (e) {}
+        saveOwnGhost(track.id, {
+          time: Math.round(raceT * 100) / 100,
+          name: savedName,
+          driverId: you ? you.driverId : "nvda",
+          samples: session.trace || []
+        });
+      }
+    }
+    showResults(order);
+  }
+  function easeCam(r) {
+    var now = performance.now();
+    var dt = r.camAt ? Math.min(0.05, (now - r.camAt) / 1000) : 0.016;
+    r.camAt = now;
+    var far = 0;
+    var mid = 0;
+    if (track && !r.rear) {
+      far = nvdaBend(track, r.s + 24, 220);
+      mid = nvdaBend(track, r.s + 12, 90);
+    }
+    var target = far * 0.72 + mid * 0.28 - (r.nose || 0) * 0.25;
+    if (target > 0.72) target = 0.72;
+    if (target < -0.72) target = -0.72;
+    if ((r.speed || 0) < 1.4) target = 0;
+    if (r.camGoal == null) r.camGoal = 0;
+    r.camGoal += (target - r.camGoal) * (1 - Math.exp(-dt * 1.6));
+    if (r.camBend == null) r.camBend = 0;
+    if (r.camLane == null) r.camLane = r.lane;
+    var maxTurn = dt * 0.55;
+    var turn = r.camGoal - r.camBend;
+    if (turn > maxTurn) turn = maxTurn;
+    if (turn < -maxTurn) turn = -maxTurn;
+    r.camBend += turn;
+    r.camLane += (r.lane - r.camLane) * (1 - Math.exp(-dt * 8));
+  }
+  function driveHalf() {
+    var h = track && track.half ? track.half : 1;
+    if (h < 0.85) return 0.85;
+    if (h > 1.15) return 1.15;
+    return h;
+  }
+  function curbLane() {
+    var vw = canvas.width || 1280;
+    var vh = Math.floor((canvas.height || 720) * 0.7);
+    var body = vh * 0.15;
+    var unit = vw * 0.68;
+    var lane = (driveHalf() - body / Math.max(unit, 1)) / 0.42;
+    var lo = driveHalf() * 1.25;
+    var hi = driveHalf() * 2.35;
+    if (lane < lo) lane = lo;
+    if (lane > hi) lane = hi;
+    return lane;
+  }
+  function roadHalfPx(vw, t) {
+    return vw * 0.68 * driveHalf() * Math.pow(Math.max(t, 0.001), 0.55);
+  }
+  function placeArt() {
+    var art = (track.theme && (track.theme.art || track.theme.id)) || "circuit";
+    if (art === "beach") return { sky: worldPlain, road: roadPlain };
+    if (art === "choco") return { sky: worldCastle, road: roadCastle };
+    if (art === "ice") return { sky: worldPlain, road: roadGhost };
+    if (art === "plain") return { sky: worldPlain, road: roadPlain };
+    if (art === "ghost") return { sky: worldGhost, road: roadGhost };
+    if (art === "castle") return { sky: worldCastle, road: roadCastle };
+    if (art === "rainbow") return { sky: worldRainbow, road: roadRainbow };
+    return { sky: horizonImg, road: asphaltImg };
+  }
+  function themeLook() {
+    var t = track.theme || {};
+    if (t.rainbow) return { sky: "#5a1848", ground: "#6a2060", hue: (raceT * 48) % 360, fog: "40,12,32" };
+    if (t.hue != null) return { sky: t.sky1, ground: t.ground, hue: t.hue, fog: t.fog || "4,10,8" };
+    if (t.edge === "#c4b4ff") return { sky: "#2a1458", ground: "#3a2078", hue: 255, fog: "16,8,32" };
+    if (t.edge === "#e6d38a") return { sky: "#6a4818", ground: "#8a5a28", hue: 36, fog: "36,24,8" };
+    if (t.edge === "#e0b070") return { sky: "#5a3818", ground: "#7a4c28", hue: 16, fog: "28,16,8" };
+    return { sky: null, ground: null, hue: 0, fog: "4,10,8" };
+  }
+  function bendPull(ahead) {
+    if (ahead <= 14) return 0;
+    var u = (ahead - 14) / (ahead - 14 + 64);
+    if (u > 1) u = 1;
+    return u * 0.9;
+  }
+  function sample(r, dist, lane, vw, vh) {
+    var horizon = vh * 0.38;
+    var ahead = Math.max(0, dist);
+    var z = 1 + ahead / 64;
+    var k = 1 / z;
+    var y = horizon + (vh - horizon) * k;
+    var camLane = r.camLane == null ? r.lane : r.camLane;
+    var half = roadHalfPx(vw, k);
+    var unit = half / driveHalf();
+    var bend = r.camBend || 0;
+    var x = vw / 2 + bend * vw * 0.42 * bendPull(ahead) - camLane * unit * 0.42 + lane * unit;
+    return { x: x, y: y, half: half, k: k };
+  }
+  function airLift(r) {
+    var hop = r.viewOn ? r.viewHop : r.hop;
+    var hopMax = r.hopMax;
+    if (!hop || !hopMax) return 0;
+    var t = 1 - hop / hopMax;
+    if (t < 0) t = 0;
+    if (t > 1) t = 1;
+    return Math.sin(t * Math.PI) * 14;
+  }
+  function drawBeacon(img, q, base, tint) {
+    var h = 14 + 16 * Math.pow(q.k, 0.9);
+    if (h > 32) h = 32;
+    var bob = Math.sin(raceT * 2.2 + q.x * 0.01) * 2;
+    ctx.fillStyle = "#0c0e0a";
+    ctx.beginPath();
+    ctx.ellipse(q.x, q.y + 2, h * 0.34, Math.max(4, 6 * q.k), 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = tint;
+    ctx.beginPath();
+    ctx.ellipse(q.x, q.y + 1, h * 0.22, Math.max(3, 4 * q.k), 0, 0, Math.PI * 2);
+    ctx.fill();
+    drawSprite(img, q.x, q.y - bob, h, 0);
+  }
+  function drawSprite(img, x, y, h, hue, alpha, rot) {
+    if (!img || !img.complete || !img.naturalWidth || h < 2) return;
+    var w = img.width * (h / img.height);
+    ctx.save();
+    ctx.translate(x, y);
+    if (rot) ctx.rotate(rot);
+    if (hue) ctx.filter = "hue-rotate(" + hue + "deg) saturate(1.2)";
+    if (alpha != null) ctx.globalAlpha = alpha;
+    ctx.drawImage(img, -w / 2, -h, w, h);
+    ctx.restore();
+  }
+  function iconFor(id) {
+    if (id === "box") return boxImg;
+    if (id === "coin") return coinImg;
+    var it = nvdaItem(id);
+    return it ? need(it.src) : null;
+  }
+  function propImg() {
+    var kind = track.theme.prop;
+    if (kind === "plant") return plantImg;
+    if (kind === "bar") return barImg;
+    return rackImg;
+  }
+  function roadQuad(a, b, leftMul, rightMul) {
+    ctx.beginPath();
+    ctx.moveTo(a.x - a.half * leftMul, a.y);
+    ctx.lineTo(a.x + a.half * rightMul, a.y);
+    ctx.lineTo(b.x + b.half * rightMul, b.y);
+    ctx.lineTo(b.x - b.half * leftMul, b.y);
+    ctx.closePath();
+  }
+  var roadTex = null;
+  var yardTex = null;
+  var texKey = "";
+  function paintTex(theme) {
+    if (roadTex && texKey === theme.road) return;
+    texKey = theme.road;
+    function make(w, h, paint) {
+      var c = document.createElement("canvas");
+      c.width = w;
+      c.height = h;
+      var g = c.getContext("2d");
+      var data = g.createImageData(w, h);
+      var px = data.data;
+      var i;
+      for (i = 0; i < w * h; i++) paint(px, i, i % w, (i / w) | 0, w);
+      g.putImageData(data, 0, 0);
+      return { canvas: c, ctx: g };
+    }
+    function grain(x, y) {
+      var n = (x * 374761393 + y * 668265263) >>> 0;
+      n = (n ^ (n >>> 13)) & 255;
+      return n & 18;
+    }
+    var yard = make(128, 256, function (px, i, x, y) {
+      var shade = grain(x, y);
+      var p = i * 4;
+      px[p] = 16 + shade;
+      px[p + 1] = 26 + shade;
+      px[p + 2] = 14;
+      px[p + 3] = 255;
+    });
+    var road = make(128, 256, function (px, i, x, y) {
+      var shade = grain(x + 40, y);
+      var p = i * 4;
+      px[p] = 22 + shade;
+      px[p + 1] = 34 + shade;
+      px[p + 2] = 16;
+      px[p + 3] = 255;
+    });
+    function tile(src, times) {
+      var c = document.createElement("canvas");
+      c.width = src.width * times;
+      c.height = src.height;
+      var g = c.getContext("2d");
+      var n;
+      for (n = 0; n < times; n++) g.drawImage(src, n * src.width, 0);
+      return c;
+    }
+    yardTex = tile(yard.canvas, 12);
+    roadTex = tile(road.canvas, 8);
+  }
+  function drawHalls(theme, vw, horizon, vanish) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, vw, horizon);
+    ctx.clip();
+    var i;
+    for (i = 0; i < 9; i++) {
+      var hw = 48 + ((i * 17) % 4) * 18;
+      var hall = 70 + ((i * 29) % 5) * 22;
+      var hx = vanish + (i - 4) * (vw / 8) - hw / 2;
+      var top = horizon - hall;
+      ctx.fillStyle = i % 2 === 0 ? "#10141a" : "#18140e";
+      if (theme.rainbow) ctx.fillStyle = "hsl(" + (i * 36) + ",35%,12%)";
+      ctx.fillRect(hx, top, hw, hall);
+      ctx.fillStyle = theme.edge;
+      var row;
+      var lit = Math.floor(raceT * 2);
+      for (row = 1; row < Math.floor(hall / 14) - 1; row++) {
+        if ((row + i + lit) % 4 === 0) continue;
+        ctx.fillRect(hx + 8, top + row * 14, hw - 16, 3);
+      }
+    }
+    var hallN;
+    for (hallN = 0; hallN < 7; hallN++) {
+      var px = vanish + (hallN - 3) * (vw / 6.2);
+      var ph = 48 + (hallN % 3) * 16;
+      drawSprite(hallN % 2 === 0 ? rackImg : heatImg, px, horizon, ph, 0);
+    }
+    ctx.restore();
+  }
+  var fadePlate = null;
+  function drawSoftPlate(img, dx, dy, dw, dh, fadeFrom, fadeTo) {
+    var w = Math.max(2, Math.floor(dw));
+    var h = Math.max(2, Math.floor(dh));
+    if (!fadePlate) fadePlate = document.createElement("canvas");
+    if (fadePlate.width !== w || fadePlate.height !== h) {
+      fadePlate.width = w;
+      fadePlate.height = h;
+    }
+    var g = fadePlate.getContext("2d");
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.globalCompositeOperation = "source-over";
+    g.globalAlpha = 1;
+    g.clearRect(0, 0, w, h);
+    g.drawImage(img, 0, 0, w, h);
+    var y0 = ((fadeFrom - dy) / dh) * h;
+    var y1 = ((fadeTo - dy) / dh) * h;
+    if (y0 < 0) y0 = 0;
+    if (y1 > h) y1 = h;
+    if (y1 < y0 + 2) y1 = y0 + 2;
+    g.globalCompositeOperation = "destination-in";
+    var grad = g.createLinearGradient(0, y0, 0, y1);
+    grad.addColorStop(0, "rgba(0,0,0,1)");
+    grad.addColorStop(1, "rgba(0,0,0,0)");
+    g.fillStyle = grad;
+    g.fillRect(0, y0, w, h - y0);
+    ctx.drawImage(fadePlate, dx, dy, dw, dh);
+  }
+  function drawRoad(r, vw, vh) {
+    var theme = track.theme;
+    var horizon = Math.floor(vh * 0.38);
+    var sky = ctx.createLinearGradient(0, 0, 0, horizon);
+    sky.addColorStop(0, theme.sky0);
+    sky.addColorStop(1, theme.sky1);
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, vw, horizon);
+    var place = placeArt();
+    var skyPlate = place.sky;
+    var y;
+    var span = vh - horizon;
+    var camLane = r.camLane == null ? r.lane : r.camLane;
+    var bend = r.camBend || 0;
+    for (y = horizon; y < vh; y++) {
+      var t = (y - horizon) / span;
+      if (t < 0.02) continue;
+      var ahead = 64 * (1 - t) / t;
+      var half = roadHalfPx(vw, t);
+      var pull = bendPull(ahead);
+      var cx = vw / 2 + bend * vw * 0.42 * pull - camLane * (half / driveHalf()) * 0.42;
+      var scroll = Math.floor((r.rear ? -r.s : r.s) * 10 + ahead * 5);
+      if (skyPlate && skyPlate.complete && skyPlate.naturalWidth) {
+        var seam = horizon / (horizon + Math.floor(span * 0.26));
+        var gy = Math.floor(skyPlate.height * (seam + (0.995 - seam) * Math.pow(t, 0.55)));
+        if (gy > skyPlate.height - 2) gy = skyPlate.height - 2;
+        var gw = Math.max(12, Math.floor(skyPlate.width * (0.42 + 0.58 * t)));
+        var gx = Math.floor((skyPlate.width - gw) / 2);
+        if (gx < 0) gx = 0;
+        if (gx + gw > skyPlate.width) gx = skyPlate.width - gw;
+        ctx.drawImage(skyPlate, gx, gy, gw, 2, 0, y, vw, 1);
+        if (theme.skyWash && t < 0.75) {
+          ctx.fillStyle = theme.skyWash;
+          ctx.fillRect(0, y, vw, 1);
+        }
+      } else if ((track.theme.art || track.theme.id) === "circuit" && yardImg.complete && yardImg.naturalWidth) {
+        var yrow = ((scroll % yardImg.height) + yardImg.height) % yardImg.height;
+        var tile = Math.max(64, vw * 0.22 * t + 36);
+        var x0 = -((scroll * 3) % tile);
+        var x;
+        for (x = x0; x < vw; x += tile) ctx.drawImage(yardImg, 0, yrow, yardImg.width, 1, x, y, tile + 1, 1);
+      } else {
+        ctx.fillStyle = theme.ground;
+        ctx.fillRect(0, y, vw, 1);
+      }
+      var roadPlate = place.road;
+      if (roadPlate && roadPlate.complete && roadPlate.naturalWidth) {
+        var arow = ((scroll % roadPlate.height) + roadPlate.height) % roadPlate.height;
+        ctx.drawImage(roadPlate, 0, arow, roadPlate.width, 1, cx - half, y, half * 2, 1);
+        if (theme.roadWash) {
+          ctx.fillStyle = theme.roadWash;
+          ctx.fillRect(cx - half, y, half * 2, 1);
+        }
+      } else {
+        ctx.fillStyle = theme.road;
+        ctx.fillRect(cx - half, y, half * 2, 1);
+      }
+      var on = Math.floor((r.s + ahead) / 40) % 2 === 0;
+      var lapAt = (r.s + ahead) % track.total;
+      if (lapAt < 18) {
+        var cell = Math.max(4, half * 0.18);
+        var c;
+        for (c = -6; c <= 6; c++) {
+          ctx.fillStyle = (c + (on ? 1 : 0)) % 2 === 0 ? "#f4f4f4" : "#111";
+          ctx.fillRect(cx + c * cell, y, cell, 1);
+        }
+      }
+    }
+    if (skyPlate && skyPlate.complete && skyPlate.naturalWidth) {
+      var extra = Math.floor(span * 0.26);
+      var ih = horizon + extra;
+      var iw = Math.max(vw * 1.2, ih * (skyPlate.width / skyPlate.height));
+      var hx = (vw - iw) / 2;
+      drawSoftPlate(skyPlate, hx, 0, iw, ih, horizon * 0.42, horizon + extra);
+    }
+  }
+  function drawMark(img, dist, lane, r, vw, vh, h) {
+    if (dist < 10 || dist > 500) return;
+    var q = sample(r, dist, lane, vw, vh);
+    drawSprite(img, q.x, q.y + 2, h * q.k, 0);
+  }
+  function drawWorldBits(r, vw, vh) {
+    var marks = [];
+    function push(dist, y, fn) {
+      if (dist > 8 && dist < 520) marks.push({ y: y, fn: fn });
+    }
+    var spacing = 96;
+    var first = Math.floor(r.s / spacing) * spacing;
+    for (var n = 0; n < 12; n++) {
+      var at = first + n * spacing;
+      [-1, 1].forEach(function (side) {
+        var distP = wrap(at - r.s);
+        if (distP < 20) return;
+        var qP = sample(r, distP, side * driveHalf() * 1.04, vw, vh);
+        push(distP, qP.y, (function (q) {
+          return function () {
+            if (!pylonImg.complete || !pylonImg.naturalWidth) return;
+            var ph = Math.min(vh * 0.34, vh * 0.55 * Math.pow(q.k, 0.8));
+            ctx.fillStyle = "rgba(0,0,0,0.7)";
+            ctx.beginPath();
+            ctx.ellipse(q.x, q.y, Math.max(8, ph * 0.16), Math.max(3, ph * 0.045), 0, 0, Math.PI * 2);
+            ctx.fill();
+            drawSprite(pylonImg, q.x, q.y + 1, ph, themeLook().hue);
+          };
+        })(qP));
+      });
+    }
+    track.oils.forEach(function (f) {
+      var dist = wrap(f * track.total - r.s);
+      if (dist < 0) return;
+      var q = sample(r, dist, 0, vw, vh);
+      push(dist, q.y, function () {
+        ctx.fillStyle = "rgba(8,10,6,0.55)";
+        ctx.beginPath();
+        ctx.ellipse(q.x, q.y, q.half * 0.35, Math.max(3, 10 * q.k), 0, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    });
+    track.pipes.forEach(function (f) {
+      var dist = wrap(f * track.total - r.s);
+      if (dist < 0) return;
+      var q = sample(r, dist, 0, vw, vh);
+      push(dist, q.y, function () {
+        ctx.fillStyle = "#c4552a";
+        ctx.fillRect(q.x - q.half * 0.45, q.y - Math.max(4, 16 * q.k), q.half * 0.9, Math.max(4, 10 * q.k));
+      });
+    });
+    track.jumps.forEach(function (f) {
+      var dist = wrap(f * track.total - r.s);
+      if (dist < 0) return;
+      var q = sample(r, dist, 0, vw, vh);
+      push(dist, q.y, function () {
+        ctx.fillStyle = "rgba(214,255,106,0.85)";
+        ctx.fillRect(q.x - q.half * 0.7, q.y - Math.max(2, 6 * q.k), q.half * 1.4, Math.max(2, 5 * q.k));
+      });
+    });
+    boxes.forEach(function (b) {
+      if (b.cool > 0) return;
+      var dist = wrap(b.s - r.s);
+      if (dist < 0) return;
+      var q = sample(r, dist, b.lane, vw, vh);
+      push(dist, q.y, function () {
+        drawBeacon(b.coin ? coinImg : boxImg, q, b.coin ? 84 : 108, b.coin ? "#ffe14a" : "#d6ff6a");
+      });
+    });
+    traps.forEach(function (t) {
+      var dist = wrap(t.s - r.s);
+      if (dist < 0) return;
+      var q = sample(r, dist, t.lane, vw, vh);
+      push(dist, q.y, function () { drawBeacon(iconFor("cable"), q, 72, "#f0c14a"); });
+    });
+    shots.forEach(function (s) {
+      var dist = wrap(s.s - r.s);
+      if (dist < 0) return;
+      var q = sample(r, dist, s.lane, vw, vh);
+      push(dist, q.y, function () { drawBeacon(iconFor(s.home ? "home" : "shell"), q, 70, "#ffb15a"); });
+    });
+    racers.forEach(function (o) {
+      if (o === r || o.out) return;
+      var along = racerS(o) - r.s;
+      var dist = o.ghost ? along : wrap(along);
+      if (o.ghost) {
+        if (along < -40 || along > 480) return;
+        if (dist < 16) dist = 16;
+      } else if (dist < 34) return;
+      var q = sample(r, dist, racerLane(o), vw, vh);
+      push(dist, q.y, function () {
+        var bob = o.spin > 0 ? Math.sin(o.spin * 30) * 4 * q.k : 0;
+        var rh = Math.round(Math.min(vh * 0.28, vh * 0.42 * Math.pow(q.k, 0.8)));
+        drawSprite(kartFor(o), q.x + bob, q.y + 2 - airLift(o) * q.k, rh, 0, o.ghost ? 0.55 : 1, 0);
+      });
+    });
+    marksSort(marks);
+  }
+  function marksSort(marks) {
+    marks.sort(function (a, b) { return a.y - b.y; });
+    marks.forEach(function (m) { m.fn(); });
+  }
+  function drawKart(r, vw, vh) {
+    var inn = controls(r);
+    var lean = ((inn.right ? 1 : 0) - (inn.left ? 1 : 0)) * 0.1;
+    var bob = r.spin > 0 ? Math.sin(raceT * 24) * 4 : 0;
+    var h = Math.round(vh * 0.36);
+    var lift = airLift(r) + (r.lift > 0 ? r.lift * 90 : 0);
+    var cruise = r.speed > 2 ? Math.min(1, r.speed / 12) : 0;
+    var wobY = Math.sin(raceT * 14) * 1.6 * cruise;
+    ctx.fillStyle = "rgba(0,0,0,0.4)";
+    ctx.beginPath();
+    ctx.ellipse(vw / 2, vh - 6, h * 0.38, 9, 0, 0, Math.PI * 2);
+    ctx.fill();
+    if (r.small > 0) {
+      ctx.strokeStyle = "#d6ff6a";
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(vw / 2, vh - h * 0.42, 34, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    drawSprite(kartFor(r), vw / 2 + bob, vh + 4 - lift + wobY, h, 0, r.star > 0 ? 0.82 : 1, lean + (r.slide > 0 ? (inn.right ? 0.18 : inn.left ? -0.18 : 0) : 0));
+    if (r.slide > 0.25) {
+      ctx.fillStyle = r.slide >= 1.15 ? "#fff4c4" : "#ffb703";
+      ctx.fillRect(vw / 2 - 28, vh - 18, 8, 4);
+      ctx.fillRect(vw / 2 + 20, vh - 18, 8, 4);
+    }
+    var shown = null;
+    if (r.rolling > 0) shown = nvdaRollItem(Math.floor(r.rollN)).id;
+    else if (r.item) shown = r.item;
+    if (shown) drawSprite(iconFor(shown), vw * 0.66, vh - h * 0.18, Math.round(h * 0.28), 0);
+  }
+  function drawMap(x, y, w, h, focus) {
+    ctx.save();
+    ctx.translate(x, y);
+    var bg = ctx.createLinearGradient(0, 0, 0, h);
+    bg.addColorStop(0, "#141a12");
+    bg.addColorStop(1, "#0c100c");
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = "rgba(118,185,0,0.7)";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(6, 6, w - 12, h - 12);
+    ctx.strokeStyle = "rgba(0,0,0,0.8)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(10, 10, w - 20, h - 20);
+    var pts = track.pts;
+    var minX = pts[0][0], maxX = pts[0][0], minY = pts[0][1], maxY = pts[0][1];
+    pts.forEach(function (p) {
+      if (p[0] < minX) minX = p[0];
+      if (p[0] > maxX) maxX = p[0];
+      if (p[1] < minY) minY = p[1];
+      if (p[1] > maxY) maxY = p[1];
+    });
+    var pad = 36;
+    function mx(px) { return pad + (px - minX) / (maxX - minX || 1) * (w - pad * 2); }
+    function my(py) { return pad + (py - minY) / (maxY - minY || 1) * (h - pad * 2); }
+    function trace() {
+      ctx.beginPath();
+      pts.forEach(function (p, i) {
+        if (i === 0) ctx.moveTo(mx(p[0]), my(p[1]));
+        else ctx.lineTo(mx(p[0]), my(p[1]));
+      });
+      ctx.closePath();
+    }
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    trace();
+    ctx.strokeStyle = "#152012";
+    ctx.lineWidth = Math.max(36, Math.min(w, h) * 0.14);
+    ctx.stroke();
+    trace();
+    ctx.strokeStyle = track.theme.rainbow ? "#6a2058" : "#3e6a22";
+    ctx.lineWidth = Math.max(16, Math.min(w, h) * 0.06);
+    ctx.stroke();
+    trace();
+    ctx.strokeStyle = track.theme.edge;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    var start = pts[0];
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(mx(start[0]) - 3, my(start[1]) - 8, 6, 16);
+    var order = racers.filter(function (rr) { return !rr.out; });
+    order.sort(function (a, b) { return (a === focus) - (b === focus); });
+    order.forEach(function (rr) {
+      var p = nvdaPoint(track, racerS(rr));
+      var px = mx(p.x);
+      var py = my(p.y);
+      var you = rr === focus;
+      var rad = you ? 18 : 14;
+      var d = nvdaDriver(rr.driverId);
+      var face = d ? imgs[d.face] : null;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(px, py, rad, 0, Math.PI * 2);
+      ctx.clip();
+      if (face && face.complete && face.naturalWidth) {
+        var sw = face.naturalWidth;
+        var sh = face.naturalHeight;
+        var side = Math.min(sw * 0.62, sh * 0.42);
+        var sx = (sw - side) * 0.5;
+        var sy = sh * 0.02;
+        ctx.drawImage(face, sx, sy, side, side, px - rad, py - rad, rad * 2, rad * 2);
+      } else {
+        ctx.fillStyle = you ? "#d6ff6a" : "#f4f4f4";
+        ctx.fillRect(px - rad, py - rad, rad * 2, rad * 2);
+      }
+      ctx.restore();
+      ctx.beginPath();
+      ctx.arc(px, py, rad + 0.5, 0, Math.PI * 2);
+      ctx.lineWidth = you ? 3 : 2;
+      ctx.strokeStyle = you ? "#ffffff" : "#10140a";
+      ctx.stroke();
+    });
+    ctx.restore();
+  }
+  function drawRear(r, vw, vh) {
+    var look = {
+      s: r.s, lane: -r.lane, camBend: -(r.camBend || 0), camLane: -r.lane, rear: true,
+      speed: r.speed, hop: 0, hopMax: 0, spin: 0, star: 0, small: 0, lift: 0, slide: 0,
+      driverId: r.driverId, human: false, you: false
+    };
+    drawRoad(look, vw, vh);
+    racers.forEach(function (o) {
+      if (o === r || o.out) return;
+      var dist = wrap(r.s - racerS(o));
+      if (dist < 24 || dist > 480) return;
+      var q = sample(look, dist, -racerLane(o), vw, vh);
+      var rh = Math.round(Math.min(vh * 0.42, vh * 0.7 * Math.pow(q.k, 0.8)));
+      drawSprite(kartFor(o), q.x, q.y, rh, 0);
+    });
+    ctx.textAlign = "left";
+    ctx.font = "700 14px Segoe UI, sans-serif";
+    ctx.fillStyle = "#d6ff6a";
+    ctx.fillText("BEHIND", 12, 22);
+  }
+  function drawView(r, vw, vh) {
+    easeCam(r);
+    drawRoad(r, vw, vh);
+    drawWorldBits(r, vw, vh);
+    if (!r.out) drawKart(r, vw, vh);
+    if (vh < canvas.height * 0.62) {
+      ctx.fillStyle = "#fff";
+      ctx.font = "700 16px Segoe UI, sans-serif";
+      ctx.textAlign = "left";
+      ctx.fillText(r.name, 14, 36);
+      ctx.font = "800 22px Segoe UI, sans-serif";
+      if (session.mode === "battle") ctx.fillText(r.balloons + " balloons", 14, 64);
+      else ctx.fillText("Lap " + Math.min(lapsN(), r.lap + 1) + " / " + lapsN(), 14, 64);
+    }
+    if (Math.abs(r.lane) > curbLane() && phase === "race") {
+      var label = r.lift > 0 ? "LAKITU" : groundKind().toUpperCase();
+      ctx.textAlign = "center";
+      ctx.font = "800 22px Segoe UI, sans-serif";
+      ctx.fillStyle = "#fff";
+      ctx.fillText(label, vw / 2, 28);
+    }
+    if (phase === "count") {
+      ctx.textAlign = "center";
+      ctx.font = "800 64px Segoe UI, sans-serif";
+      ctx.fillStyle = "#fff";
+      ctx.fillText(count > 1 ? String(Math.ceil(count - 0.05)) : "GO", vw / 2, vh * 0.4);
+    } else if (phase === "connect") {
+      ctx.textAlign = "center";
+      ctx.font = "800 28px Segoe UI, sans-serif";
+      ctx.fillStyle = "#d6ff6a";
+      ctx.fillText("LINKING", vw / 2, vh * 0.42);
+    }
+  }
+  function paint() {
+    var W = canvas.width, H = canvas.height;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = "source-over";
+    ctx.filter = "none";
+    ctx.shadowBlur = 0;
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = "#07080c";
+    ctx.fillRect(0, 0, W, H);
+    if (!track || !racers.length) return;
+    poseRemotes();
+    var cam = youRacer();
+    if (split && racers.length > 1) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, W, H / 2 - 3);
+      ctx.clip();
+      drawView(racers[0], W, H / 2 - 3);
+      ctx.restore();
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, H / 2 + 3, W, H / 2 - 3);
+      ctx.clip();
+      ctx.translate(0, H / 2 + 3);
+      drawView(racers[1], W, H / 2 - 3);
+      ctx.restore();
+    } else {
+      var vh = Math.floor(H * 0.7);
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, W, vh);
+      ctx.clip();
+      drawView(cam, W, vh);
+      ctx.restore();
+      if (rearOn) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(0, vh, W, H - vh);
+        ctx.clip();
+        ctx.translate(0, vh);
+        drawRear(cam, W, H - vh);
+        ctx.restore();
+      } else drawMap(0, vh, W, H - vh, cam);
+    }
+  }
+  function hud() {
+    var lap = document.getElementById("lap");
+    var place = document.getElementById("place");
+    var coins = document.getElementById("coins");
+    if (split && (phase === "race" || phase === "count")) {
+      lap.textContent = "Split";
+      place.textContent = "";
+      coins.textContent = "";
+      return;
+    }
+    if (!track || phase === "menu" || phase === "results" || phase === "pause") {
+      if (phase === "menu") lap.textContent = "Rack Prix";
+      return;
+    }
+    var you = youRacer();
+    var rank = 1;
+    standings().forEach(function (r, i) { if (r.you) rank = i + 1; });
+    lap.textContent = track.name + (session.mode === "gp" ? "  ·  " + (NVDA_CUPS.filter(function (c) { return c.id === session.cup; })[0] || { name: "" }).name : "");
+    if (session.mode === "battle") {
+      place.textContent = you.balloons + " balloons";
+      coins.textContent = "";
+    } else if (session.mode === "tt") {
+      place.textContent = raceT.toFixed(1) + "s";
+      var best = career.tt[track.id];
+      coins.textContent = best ? "best " + best.toFixed(1) + "s" : "time trial";
+    } else {
+      place.textContent = phase === "results" ? ord(session.lastPlace) : ord(rank);
+      coins.textContent = you.coins + " coins" + (session.mode === "gp" ? "  ·  " + session.lives + " lives" : "");
+    }
+  }
+  function choice(label, sub, fn, extra) {
+    var b = document.createElement("button");
+    b.type = "button";
+    b.innerHTML = label + (sub ? "<small>" + sub + "</small>" : "");
+    if (extra === "on") b.className = "on";
+    if (extra === "off") b.className = "off";
+    b.addEventListener("click", function () { if (extra !== "off") fn(); });
+    return b;
+  }
+  function openMenu(title, blurb, buttons) {
+    phase = "menu";
+    document.getElementById("title").textContent = title;
+    document.getElementById("blurb").textContent = blurb;
+    var box = document.getElementById("choices");
+    box.className = "choices";
+    box.innerHTML = "";
+    buttons.forEach(function (b) { box.appendChild(b); });
+    document.getElementById("overlay").classList.remove("hidden");
+    document.getElementById("lap").textContent = "Rack Prix";
+    document.getElementById("place").textContent = "";
+    document.getElementById("coins").textContent = career.unlock150 ? "150cc open" : "";
+  }
+  function menuMode() {
+    openMenu("RACK PRIX", "A season of courses. Coins, items, and a place that sticks.", [
+      choice("Grand Prix", "Coming soon.", function () {}, "off"),
+      choice("Online", "Coming soon.", function () {}, "off"),
+      choice("Time Trial", "Five laps. No coins, no items.", function () { session = freshSession(); session.mode = "tt"; menuDriver(); }),
+      choice("Match Race", "Coming soon.", function () {}, "off"),
+      choice("Battle", "Coming soon.", function () {}, "off")
+    ]);
+  }
+  function menuCc() {
+    openMenu("ENGINE", "150cc opens when every cup is yours.", [
+      choice("50cc", "The learning gear.", function () { session.cc = "50"; menuDriver(); }, session.cc === "50" ? "on" : ""),
+      choice("100cc", "The cup speed.", function () { session.cc = "100"; menuDriver(); }, session.cc === "100" ? "on" : ""),
+      choice("150cc", career.unlock150 ? "Unlocked." : "Locked.", function () { session.cc = "150"; menuDriver(); }, career.unlock150 ? (session.cc === "150" ? "on" : "") : "off"),
+      choice("Back", "", menuMode)
+    ]);
+  }
+  function faceButton(d, on, fn) {
+    var b = document.createElement("button");
+    b.type = "button";
+    b.className = "face" + (on ? " on" : "");
+    b.innerHTML = "<img alt='' src=\"" + d.face + "\" style=\"object-position:" + (d.facePos || "center 18%") + "\"><b>" + d.name + "</b><small>" + d.blurb + "</small>";
+    b.addEventListener("click", fn);
+    return b;
+  }
+  function openDrivers(title, blurb, fn, back) {
+    var buttons = NVDA_DRIVERS.map(function (d, i) { return faceButton(d, false, function () { fn(i); }); });
+    buttons.push(choice("Back", "", back));
+    openMenu(title, blurb, buttons);
+    document.getElementById("choices").className = "choices roster";
+  }
+  function menuDriver() {
+    openDrivers("DRIVER", "Pick who you drive.", function (i) {
+      session.driver = i;
+      session.p2driver = (i + 1) % NVDA_DRIVERS.length;
+      if (session.mode === "gp") menuCup();
+      else menuTrack();
+    }, session.mode === "gp" ? menuCc : menuMode);
+  }
+  function menuOnline() {
+    openMenu("ONLINE", "One screen hosts the race. The others send their buttons.", [
+      choice("Create a room", "You host. Read them the code.", function () { NVDA_NET.create("nvda"); }),
+      choice("Join with a code", "Four letters.", menuJoin),
+      choice("Back", "", menuMode)
+    ]);
+  }
+  function menuJoin() {
+    openMenu("JOIN", "The host reads you four letters.", []);
+    var box = document.getElementById("choices");
+    var input = document.createElement("input");
+    input.maxLength = 4;
+    input.placeholder = "CODE";
+    input.autocomplete = "off";
+    input.style.cssText = "letter-spacing:0.2em;font-size:22px;text-transform:uppercase;text-align:center;padding:8px;background:#0c100c;border:1px solid rgba(118,185,0,0.45);width:160px;";
+    box.appendChild(input);
+    box.appendChild(choice("Join", "", function () { NVDA_NET.join(input.value, "nvda"); }));
+    box.appendChild(choice("Back", "", menuOnline));
+    input.focus();
+  }
+  function renderLobby() {
+    var L = NVDA_NET.lobby;
+    if (!L) return;
+    phase = "menu";
+    document.getElementById("title").textContent = "ROOM";
+    document.getElementById("blurb").textContent = NVDA_NET.host ? "Start when the others are ready." : "Ready up. The host starts the race.";
+    var box = document.getElementById("choices");
+    box.className = "choices";
+    box.innerHTML = "";
+    var code = document.createElement("div");
+    code.className = "roomcode";
+    code.textContent = L.code;
+    box.appendChild(code);
+    var list = document.createElement("div");
+    list.className = "roomlist";
+    L.players.forEach(function (p) {
+      var d = nvdaDriver(p.driver);
+      var row = document.createElement("div");
+      row.className = "roomrow" + (p.id === NVDA_NET.id ? " you" : "");
+      row.innerHTML = "<img alt='' src=\"" + d.face + "\" style=\"object-position:" + (d.facePos || "center 18%") + "\"><span>" + d.name + (p.host ? " · host" : "") + (p.ready ? " · ready" : "") + "</span>";
+      list.appendChild(row);
+    });
+    box.appendChild(list);
+    var grid = document.createElement("div");
+    grid.className = "choices roster roompick";
+    NVDA_DRIVERS.forEach(function (d) {
+      grid.appendChild(faceButton(d, d.id === (NVDA_NET.driver || "nvda"), function () {
+        NVDA_NET.driver = d.id;
+        NVDA_NET.setDriver(d.id);
+      }));
+    });
+    box.appendChild(grid);
+    if (NVDA_NET.host) {
+      var course = document.createElement("select");
+      course.className = "course";
+      NVDA_CUPS.forEach(function (c) {
+        nvdaCupTracks(c.id).forEach(function (t) {
+          var opt = document.createElement("option");
+          opt.value = t.id;
+          opt.textContent = t.name;
+          if (t.id === L.trackId) opt.selected = true;
+          course.appendChild(opt);
+        });
+      });
+      course.addEventListener("change", function () { NVDA_NET.setTrack(course.value, cc.value); });
+      var cc = document.createElement("select");
+      cc.className = "cc";
+      ["50", "100", "150"].forEach(function (gear) {
+        var opt = document.createElement("option");
+        opt.value = gear;
+        opt.textContent = gear + "cc";
+        if (gear === L.cc) opt.selected = true;
+        cc.appendChild(opt);
+      });
+      cc.addEventListener("change", function () { NVDA_NET.setTrack(course.value, cc.value); });
+      box.appendChild(course);
+      box.appendChild(cc);
+      var guests = L.players.filter(function (p) { return !p.host; });
+      var ready = guests.length >= 1 && guests.every(function (p) { return p.ready; });
+      var start = choice("Start", ready ? "The room is ready." : "Wait until they ready up.", function () { NVDA_NET.start(); }, ready ? "" : "off");
+      box.appendChild(start);
+    } else {
+      var mine = null;
+      L.players.forEach(function (p) { if (p.id === NVDA_NET.id) mine = p; });
+      var amReady = !!(mine && mine.ready);
+      box.appendChild(choice(amReady ? "Ready" : "Not ready", amReady ? "The host can start." : "Press when you are in.", function () {
+        NVDA_NET.setReady(!amReady);
+      }, amReady ? "on" : ""));
+    }
+    box.appendChild(choice("Leave", "", function () { NVDA_NET.leave(); menuMode(); }));
+    document.getElementById("overlay").classList.remove("hidden");
+    document.getElementById("lap").textContent = "Rack Prix";
+  }
+  function menuCup() {
+    var buttons = NVDA_CUPS.map(function (c) {
+      var won = career.cups[c.id] ? "Won." : "Five courses.";
+      return choice(c.name, won, function () {
+        session.cup = c.id;
+        session.raceIndex = 0;
+        session.points = NVDA_PRIX.blank();
+        session.lives = NVDA_PRIX.lives;
+        session.cupOver = false;
+        begin();
+      });
+    });
+    buttons.push(choice("Back", "", menuDriver));
+    openMenu("CUP", "Finish 5th or worse and a life goes.", buttons);
+  }
+  function menuTrack() {
+    var buttons = [];
+    NVDA_CUPS.forEach(function (c) {
+      nvdaCupTracks(c.id).forEach(function (t) {
+        var best = career.tt[t.id];
+        var sub = session.mode === "tt" && best ? best.toFixed(1) + "s" : c.name;
+        buttons.push(choice(t.name, sub, function () {
+          session.trackId = t.id;
+          session.cup = c.id;
+          if (session.mode === "tt") menuGhost();
+          else begin();
+        }));
+      });
+    });
+    buttons.push(choice("Back", "", menuDriver));
+    if (session.mode === "tt") buttons.push(choice("Board", "Times on this site.", function () { location.href = "tt/index.html"; }));
+    openMenu(session.mode === "tt" ? "TIME TRIAL" : "COURSE", "Pick a course.", buttons);
+  }
+  function loadBoard() {
+    function localRows() {
+      return (window.NVDA_TT && NVDA_TT.readLocal().rows) || [];
+    }
+    return fetch("tt/board.json", { cache: "no-store" }).then(function (res) {
+      return res.json();
+    }).catch(function () {
+      return { rows: [] };
+    }).then(function (file) {
+      var live = (location.hostname === "127.0.0.1" || location.hostname === "localhost") ? "http://127.0.0.1:8792/board" : "";
+      if (!live) return NVDA_TT.merge(file.rows || [], localRows());
+      return fetch(live, { cache: "no-store" }).then(function (res) {
+        return res.json();
+      }).catch(function () {
+        return file;
+      }).then(function (remote) {
+        var rows = remote && remote.rows && remote.rows.length ? remote.rows : (file.rows || []);
+        return NVDA_TT.merge(rows, localRows());
+      });
+    });
+  }
+  function menuGhost() {
+    var course = nvdaTrack(session.trackId);
+    openMenu("GHOST", course.name + ". Pick who you race.", [
+      choice("Loading", "", function () {}, "off")
+    ]);
+    loadBoard().then(function (rows) {
+      var buttons = [];
+      buttons.push(choice("Clock only", "No other kart.", function () {
+        session.ghost = null;
+        begin();
+      }));
+      var mine = ownGhost(session.trackId);
+      if (mine && mine.samples && mine.samples.length) {
+        buttons.push(choice("Your ghost", Number(mine.time).toFixed(2) + "s", function () {
+          session.ghost = mine;
+          begin();
+        }));
+      }
+      var n = 0;
+      rows.forEach(function (row) {
+        if (row.track !== session.trackId || !row.ghost || !row.ghost.length || n >= 5) return;
+        n += 1;
+        buttons.push(choice(row.name, Number(row.time).toFixed(2) + "s · " + (row.racerName || row.racer), function () {
+          session.ghost = { time: row.time, name: row.name, driverId: row.racer, samples: row.ghost };
+          begin();
+        }));
+      });
+      buttons.push(choice("Board", "Times on this site.", function () { location.href = "tt/index.html"; }));
+      buttons.push(choice("Back", "", menuTrack));
+      openMenu("GHOST", course.name + ". Your run, or one of the top five.", buttons);
+    }).catch(function () {
+      openMenu("GHOST", course.name + ".", [
+        choice("Clock only", "No other kart.", function () { session.ghost = null; begin(); }),
+        choice("Back", "", menuTrack)
+      ]);
+    });
+  }
+  function menuBattle() {
+    var buttons = NVDA_BATTLE.courses.map(function (id) {
+      var t = nvdaTrack(id);
+      return choice(t.name, "Three balloons.", function () {
+        session.trackId = id;
+        session.p2 = false;
+        menuDriverBattle();
+      });
+    });
+    buttons.push(choice("Back", "", menuMode));
+    openMenu("BATTLE", "Hit them. Pop a balloon. Last one driving wins.", buttons);
+  }
+  function menuDriverBattle() {
+    var buttons = [
+      choice("Solo", "You and three of her.", function () { session.p2 = false; menuDriverThenBattle(); }),
+      choice("Two players", "Split screen.", function () { session.p2 = true; menuDriverThenBattle(); })
+    ];
+    buttons.push(choice("Back", "", menuBattle));
+    openMenu("WHO", "Balloons start at three.", buttons);
+  }
+  function menuDriverThenBattle() {
+    openDrivers("DRIVER", "Pick who you drive.", function (i) {
+      session.driver = i;
+      session.p2driver = (i + 1) % NVDA_DRIVERS.length;
+      begin();
+    }, menuDriverBattle);
+  }
+  function saveTtTime(raw) {
+    var name = String(raw || "").trim().replace(/\s+/g, " ").slice(0, 16);
+    if (!/^[A-Za-z0-9 ]{1,16}$/.test(name)) {
+      document.getElementById("blurb").textContent = "Use a name of letters and numbers.";
+      return;
+    }
+    try { localStorage.setItem("nvda-tt-name", name); } catch (e) {}
+    var you = youRacer();
+    var body = {
+      name: name,
+      time: Math.round(raceT * 100) / 100,
+      track: track.id,
+      trackName: track.name,
+      racer: you.driverId,
+      racerName: you.name,
+      ghost: session.trace || []
+    };
+    if (window.NVDA_TT) NVDA_TT.remember(body);
+    var mine = ownGhost(track.id);
+    if (mine && Math.abs(mine.time - body.time) < 0.02) {
+      mine.name = name;
+      try {
+        var all = JSON.parse(localStorage.getItem("nvda-tt-ghosts") || "{}");
+        all[track.id] = mine;
+        localStorage.setItem("nvda-tt-ghosts", JSON.stringify(all));
+      } catch (e2) {}
+    }
+    var live = (location.hostname === "127.0.0.1" || location.hostname === "localhost") ? "http://127.0.0.1:8792/board" : "";
+    if (!live) {
+      document.getElementById("blurb").textContent = name + "  ·  " + body.time.toFixed(2) + "s is on the board in this browser.";
+      return;
+    }
+    fetch(live, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    }).then(function (res) {
+      return res.json().then(function (data) {
+        var msg = !res.ok ? (data.error || "The board refused that time.") : data.kept ? ("A faster time for " + name + " is already on this course.") : (name + "  ·  " + body.time.toFixed(2) + "s saved.");
+        document.getElementById("blurb").textContent = msg;
+      });
+    }).catch(function () {
+      document.getElementById("blurb").textContent = name + "  ·  " + body.time.toFixed(2) + "s is on the board in this browser.";
+    });
+  }
+  function showResults(order) {
+    var title = "RESULT";
+    var blurb = "";
+    if (session.mode === "gp") {
+      title = session.retry ? "LIFE LOST" : (session.cupOver ? "CUP" : "STANDINGS");
+      if (session.lives <= 0 && session.lastPlace >= 5) blurb = "The cup is over. You finished " + ord(session.lastPlace) + ".";
+      else if (session.retry) blurb = ord(session.lastPlace) + ". " + session.lives + " lives left. The course does not count.";
+      else if (session.cupOver) blurb = (career.cups[session.cup] ? "You took the cup." : "Someone else took the cup.") + (career.unlock150 ? " 150cc is open." : "");
+      else blurb = ord(session.lastPlace) + " on " + track.name + ".";
+    } else if (session.mode === "tt") {
+      title = "TIME";
+      blurb = raceT.toFixed(2) + "s on " + track.name + (session.ttBest ? "  ·  a new best." : "");
+    } else if (session.mode === "battle") {
+      var win = NVDA_BATTLE.winner(racers);
+      title = "BATTLE";
+      blurb = win ? win.name + " still has balloons." : "Nobody left.";
+    } else if (session.mode === "online") {
+      title = "RACE";
+      blurb = order[0] ? order[0].name + " takes it." : "";
+    } else {
+      title = "MATCH";
+      blurb = order[0] ? order[0].name + " takes it." : "";
+    }
+    var table = document.createElement("table");
+    table.className = "sheet";
+    order.forEach(function (r, i) {
+      var tr = document.createElement("tr");
+      if (r.you) tr.className = "you";
+      var pts = session.mode === "gp" ? session.points[r.slot] : (session.mode === "battle" ? r.balloons : "");
+      tr.innerHTML = "<td>" + (i + 1) + "</td><td>" + r.name + "</td><td>" + pts + "</td>";
+      table.appendChild(tr);
+    });
+    document.getElementById("title").textContent = title;
+    document.getElementById("blurb").textContent = blurb;
+    var box = document.getElementById("choices");
+    box.className = "choices";
+    box.innerHTML = "";
+    box.appendChild(table);
+    if (session.mode === "tt") {
+      var name = document.createElement("input");
+      name.maxLength = 16;
+      name.placeholder = "NAME";
+      name.setAttribute("aria-label", "Name for the time board");
+      name.style.cssText = "letter-spacing:0.12em;font-size:18px;text-transform:uppercase;text-align:center;padding:8px;background:#0c100c;border:1px solid rgba(118,185,0,0.45);width:180px;";
+      try { name.value = localStorage.getItem("nvda-tt-name") || ""; } catch (e) {}
+      box.appendChild(name);
+      box.appendChild(choice("Save time", "Name, track, racer, and the run.", function () { saveTtTime(name.value); }));
+      box.appendChild(choice("Board", "Times on this site.", function () { location.href = "tt/index.html"; }));
+    }
+    if (session.mode === "gp" && session.lives <= 0 && session.lastPlace >= 5) {
+      box.appendChild(choice("Back to the desk", "", menuMode));
+    } else if (session.mode === "gp" && session.retry) {
+      box.appendChild(choice("Retry this course", "", function () { session.retry = false; begin(); }));
+      box.appendChild(choice("Quit the cup", "", menuMode));
+    } else if (session.mode === "gp" && !session.cupOver) {
+      box.appendChild(choice("Next course", "", begin));
+      box.appendChild(choice("Quit the cup", "", menuMode));
+    } else if (session.mode === "online") {
+      if (netHost) box.appendChild(choice("Rematch", "Same room.", function () { NVDA_NET.rematch(); }));
+      box.appendChild(choice("Desk", "", function () { NVDA_NET.leave(); menuMode(); }));
+    } else {
+      box.appendChild(choice("Again", "", begin));
+      box.appendChild(choice("Desk", "", menuMode));
+    }
+    document.getElementById("overlay").classList.remove("hidden");
+    phase = "results";
+  }
+  function togglePause() {
+    if (phase === "race" || phase === "count") {
+      phase = "pause";
+      openMenu("PAUSED", track ? track.name : "", [
+        choice("Resume", "", function () {
+          phase = count > 0 ? "count" : "race";
+          document.getElementById("overlay").classList.add("hidden");
+        }),
+        choice("Quit", "", menuMode)
+      ]);
+      phase = "pause";
+    }
+  }
+  function frame(t) {
+    var dt = Math.min(0.033, (t - last) / 1000 || 0.016);
+    last = t;
+    if ((session && session.mode === "online") || phase === "count" || phase === "race") step(dt);
+    if (phase !== "menu") paint();
+    else if (track && racers.length) paint();
+    hud();
+    requestAnimationFrame(frame);
+  }
+  track = nvdaTrack("aisle-circuit");
+  racers = [makeRacer(NVDA_DRIVERS[0].id, 0, 0)];
+  wireNet();
+  menuMode();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,111 @@
+:root {
+  --bg: #07080c;
+  --panel: #10131a;
+  --ink: #e7ecdf;
+  --muted: #8d9786;
+  --green: #76b900;
+  --line: rgba(118, 185, 0, 0.38);
+  --danger: #c43848;
+}
+
+* { box-sizing: border-box; }
+
+html, body { margin: 0; min-height: 100%; }
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+button, select, input { font: inherit; color: inherit; }
+
+button {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) { border-color: var(--green); }
+
+button:disabled { opacity: 0.38; cursor: default; }
+
+button:focus-visible, a:focus-visible, select:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+}
+
+button.primary {
+  background: var(--green);
+  color: #10140a;
+  border-color: var(--green);
+  font-weight: 700;
+}
+
+a.quiet {
+  color: var(--green);
+  text-decoration: none;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+
+header.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px 0;
+}
+
+.brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+
+.brand h1 {
+  margin: 0;
+  font-size: 22px;
+  letter-spacing: -0.03em;
+  color: var(--green);
+  font-weight: 700;
+}
+
+.brand p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+
+.eye { width: 28px; height: 28px; flex: none; }
+
+.bar-actions { display: flex; gap: 8px; align-items: center; }
+
+select {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+
+.kicker {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--green);
+  letter-spacing: -0.04em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { scroll-behavior: auto !important; }
+}

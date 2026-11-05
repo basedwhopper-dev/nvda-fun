@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Time Trial · $NVDA</title>
+<link rel="icon" href="../site-mark.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,700&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../site.css">
+<style>
+  main { max-width: 760px; margin: 0 auto; padding: 32px 20px 64px; }
+  h2 { margin: 28px 0 8px; font-size: 18px; letter-spacing: 0.08em; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid rgba(118,185,0,0.25); }
+  th { color: #76b900; font-weight: 500; }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip</a>
+<header class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="../index.html"><img src="../site-mark.svg" alt="" width="26" height="26">$NVDA</a>
+    <nav class="nav-links" aria-label="Page">
+      <a href="../nvda_kart.html?prix=38">Race</a>
+      <a href="../games.html">Games</a>
+    </nav>
+  </div>
+</header>
+<main id="main" class="page-head">
+  <h1>Time Trial</h1>
+  <p>Fastest laps. The top five on a course can be raced as a ghost.</p>
+  <div id="board"></div>
+</main>
+<footer class="foot">
+  <div class="foot-inner">
+    <p><a href="../index.html">$NVDA</a> · nvda.zone</p>
+    <p><a href="../nvda_kart.html?prix=38">Time Trial</a></p>
+  </div>
+</footer>
+<script src="board-client.js?v=1"></script>
+<script>
+(function () {
+  var root = document.getElementById("board");
+  function paint(rows) {
+    if (!rows.length) {
+      root.textContent = "No times yet.";
+      return;
+    }
+    var by = {};
+    rows.forEach(function (row) {
+      if (!by[row.track]) by[row.track] = { name: row.trackName || row.track, rows: [] };
+      by[row.track].rows.push(row);
+    });
+    root.innerHTML = "";
+    Object.keys(by).sort().forEach(function (id) {
+      var block = by[id];
+      var h = document.createElement("h2");
+      h.textContent = block.name;
+      root.appendChild(h);
+      var table = document.createElement("table");
+      table.className = "sheet";
+      table.innerHTML = "<tr><th>#</th><th>Name</th><th>Time</th><th>Racer</th></tr>";
+      block.rows.sort(function (a, b) { return a.time - b.time; }).forEach(function (row, i) {
+        var tr = document.createElement("tr");
+        tr.innerHTML = "<td>" + (i + 1) + "</td><td></td><td>" + Number(row.time).toFixed(2) + "s</td><td></td>";
+        tr.children[1].textContent = row.name;
+        tr.children[3].textContent = row.racerName || row.racer;
+        table.appendChild(tr);
+      });
+      root.appendChild(table);
+    });
+  }
+  function show(fileRows) {
+    var local = (window.NVDA_TT && NVDA_TT.readLocal().rows) || [];
+    paint(NVDA_TT.merge(fileRows || [], local));
+  }
+  fetch("board.json", { cache: "no-store" }).then(function (res) { return res.json(); }).then(function (board) {
+    show(board.rows || []);
+  }).catch(function () { show([]); });
+})();
+</script>
+</body>
+</html>
