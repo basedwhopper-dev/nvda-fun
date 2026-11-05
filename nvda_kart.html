@@ -2006,25 +2006,19 @@
     if (session.mode === "tt") buttons.push(choice("Board", "Times on this site.", function () { location.href = "tt/index.html"; }));
     openMenu(session.mode === "tt" ? "TIME TRIAL" : "COURSE", "Pick a course.", buttons);
   }
+  function boardServer() { return "http://127.0.0.1:8792/board"; }
   function loadBoard() {
     function localRows() {
       return (window.NVDA_TT && NVDA_TT.readLocal().rows) || [];
     }
-    return fetch("tt/board.json", { cache: "no-store" }).then(function (res) {
-      return res.json();
-    }).catch(function () {
-      return { rows: [] };
-    }).then(function (file) {
-      var live = (location.hostname === "127.0.0.1" || location.hostname === "localhost") ? "http://127.0.0.1:8792/board" : "";
-      if (!live) return NVDA_TT.merge(file.rows || [], localRows());
-      return fetch(live, { cache: "no-store" }).then(function (res) {
+    function grab(url) {
+      return fetch(url, { cache: "no-store" }).then(function (res) {
         return res.json();
-      }).catch(function () {
-        return file;
-      }).then(function (remote) {
-        var rows = remote && remote.rows && remote.rows.length ? remote.rows : (file.rows || []);
-        return NVDA_TT.merge(rows, localRows());
-      });
+      }).catch(function () { return { rows: [] }; });
+    }
+    return Promise.all([grab("tt/board.json"), grab(boardServer())]).then(function (parts) {
+      var shared = NVDA_TT.merge((parts[0] && parts[0].rows) || [], (parts[1] && parts[1].rows) || []);
+      return NVDA_TT.merge(shared, localRows());
     });
   }
   function menuGhost() {
@@ -2046,14 +2040,20 @@
         }));
       }
       var n = 0;
+      var listed = 0;
       rows.forEach(function (row) {
-        if (row.track !== session.trackId || !row.ghost || !row.ghost.length || n >= 5) return;
+        if (row.track !== session.trackId || n >= 5) return;
         n += 1;
+        if (!row.ghost || !row.ghost.length) return;
+        listed += 1;
         buttons.push(choice(row.name, Number(row.time).toFixed(2) + "s · " + (row.racerName || row.racer), function () {
           session.ghost = { time: row.time, name: row.name, driverId: row.racer, samples: row.ghost };
           begin();
         }));
       });
+      if (n && !listed) {
+        buttons.push(choice("Top five", "Those times have no recorded run yet.", function () {}, "off"));
+      }
       buttons.push(choice("Board", "Times on this site.", function () { location.href = "tt/index.html"; }));
       buttons.push(choice("Back", "", menuTrack));
       openMenu("GHOST", course.name + ". Your run, or one of the top five.", buttons);
@@ -2118,11 +2118,7 @@
         localStorage.setItem("nvda-tt-ghosts", JSON.stringify(all));
       } catch (e2) {}
     }
-    var live = (location.hostname === "127.0.0.1" || location.hostname === "localhost") ? "http://127.0.0.1:8792/board" : "";
-    if (!live) {
-      document.getElementById("blurb").textContent = name + "  ·  " + body.time.toFixed(2) + "s is on the board in this browser.";
-      return;
-    }
+    var live = boardServer();
     fetch(live, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

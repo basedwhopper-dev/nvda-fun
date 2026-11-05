@@ -10,7 +10,8 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,700&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../site.css">
 <style>
-  main { max-width: 760px; margin: 0 auto; padding: 32px 20px 64px; }
+  main#main.page-head { max-width: 760px; margin: 0 auto; padding: 112px 20px 64px; }
+  main#main.page-head h1 { margin: 0 0 12px; line-height: 1.15; }
   h2 { margin: 28px 0 8px; font-size: 18px; letter-spacing: 0.08em; }
   table { width: 100%; border-collapse: collapse; }
   th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid rgba(118,185,0,0.25); }
@@ -72,13 +73,17 @@
       root.appendChild(table);
     });
   }
-  function show(fileRows) {
+  function show(fileRows, serverRows) {
     var local = (window.NVDA_TT && NVDA_TT.readLocal().rows) || [];
-    paint(NVDA_TT.merge(fileRows || [], local));
+    var shared = NVDA_TT.merge(fileRows || [], serverRows || []);
+    paint(NVDA_TT.merge(shared, local));
   }
-  fetch("board.json", { cache: "no-store" }).then(function (res) { return res.json(); }).then(function (board) {
-    show(board.rows || []);
-  }).catch(function () { show([]); });
+  function grab(url) {
+    return fetch(url, { cache: "no-store" }).then(function (res) { return res.json(); }).catch(function () { return { rows: [] }; });
+  }
+  Promise.all([grab("board.json"), grab("http://127.0.0.1:8792/board")]).then(function (parts) {
+    show((parts[0] && parts[0].rows) || [], (parts[1] && parts[1].rows) || []);
+  });
 })();
 </script>
 </body>
