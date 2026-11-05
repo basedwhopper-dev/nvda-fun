@@ -29,6 +29,10 @@
         event.preventDefault();
         lightImg.src = link.getAttribute("href");
         lightImg.alt = "NVDA still";
+        if (window.getSelection) {
+          var sel = window.getSelection();
+          if (sel.removeAllRanges) sel.removeAllRanges();
+        }
         light.classList.add("open");
       });
     });
