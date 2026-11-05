@@ -33,6 +33,20 @@ img, video { max-width: 100%; }
 
 ::selection { background: var(--green); color: #000; }
 
+img::selection,
+.still::selection,
+.lightbox::selection,
+.lightbox img::selection {
+  background: transparent;
+}
+
+.still,
+.still img,
+.lightbox img {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 .skip {
   position: absolute;
   left: 12px;
@@ -225,6 +239,7 @@ main { padding-top: 64px; }
 .arcade h2,
 .hall h2,
 .buyhow h2,
+.band h2,
 .page-head h1,
 .page-banner h1 {
   margin: 0 0 16px;
@@ -608,7 +623,12 @@ main { padding-top: 64px; }
   gap: 12px;
   width: min(1440px, calc(100% - var(--pad) * 2));
   margin: 0 auto;
-  padding: 20px 0 64px;
+  padding: 0 0 48px;
+}
+
+.band h2 {
+  width: min(1440px, calc(100% - var(--pad) * 2));
+  margin: 8px auto 16px;
 }
 
 .still {
@@ -732,7 +752,12 @@ main { padding-top: 64px; }
 
 .lightbox.open { display: flex; }
 
-.lightbox img { max-width: min(1200px, 100%); max-height: 90vh; }
+.lightbox img {
+  max-width: min(1200px, 100%);
+  max-height: 90vh;
+  background: transparent;
+  filter: none;
+}
 
 .lightbox button {
   position: absolute;
