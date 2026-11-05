@@ -62,7 +62,7 @@
 <canvas id="c"></canvas>
 <div class="top">
   <div>
-    <a class="back" href="games.html">NVDA</a>
+    <a class="back" href="nvda_menu.html">NVDA</a>
     <div class="sub" id="lap">Rack Prix</div>
   </div>
   <div style="text-align:right">
@@ -80,7 +80,7 @@
 </div>
 <script src="kart-tracks.js?v=16"></script>
 <script src="kart-items.js"></script>
-<script src="kart-drivers.js?v=9"></script>
+<script src="kart-drivers.js?v=10"></script>
 <script src="tt/board-client.js?v=1"></script>
 <script src="kart-net.js?v=1"></script>
 <script src="kart-prix.js"></script>
@@ -119,36 +119,41 @@
   var showedResult = false;
   var connectTimer = null;
 
-  function need(src) {
+  function need(src, pri) {
     if (!imgs[src]) {
       var im = new Image();
+      if (pri) im.fetchPriority = pri;
+      im.decoding = "async";
       im.src = src;
       imgs[src] = im;
+    } else if (pri === "high" && imgs[src].fetchPriority !== "high") {
+      imgs[src].fetchPriority = "high";
     }
     return imgs[src];
   }
-  var kartImg = need("game-art/kart-behind.png?v=2");
-  NVDA_DRIVERS.forEach(function (d) { need(d.sprite); need(d.face); });
-  var coinImg = need("game-art/prop-coin.png?v=1");
-  var boxImg = need("game-art/item-box.png");
-  var rackImg = need("game-art/prop-rack.png?v=1");
-  var heatImg = need("game-art/prop-heat.png?v=1");
-  var horizonImg = need("game-art/race-horizon.jpg?v=1");
-  var asphaltImg = need("game-art/race-asphalt.jpg?v=1");
-  var worldPlain = need("game-art/world-plain.jpg?v=1");
-  var worldGhost = need("game-art/world-ghost.jpg?v=1");
-  var worldCastle = need("game-art/world-castle.jpg?v=1");
-  var worldRainbow = need("game-art/world-rainbow.jpg?v=1");
-  var roadPlain = need("game-art/road-plain.jpg?v=1");
-  var roadGhost = need("game-art/road-ghost.jpg?v=1");
-  var roadCastle = need("game-art/road-castle.jpg?v=1");
-  var roadRainbow = need("game-art/road-rainbow.jpg?v=1");
-  var yardImg = need("game-art/race-yard.jpg?v=1");
-  var pylonImg = need("game-art/race-pylon.png?v=2");
-  var wallImg = need("game-art/race-wall.png?v=1");
-  var plantImg = need("game-art/prop-plant.png?v=1");
-  var barImg = need("game-art/prop-low.png?v=1");
-  NVDA_ITEMS.forEach(function (it) { need(it.src); });
+  function coursePlates(art) {
+    var sky = "game-art/fast/race-horizon.jpg";
+    var road = "game-art/fast/race-asphalt.jpg";
+    if (art === "beach" || art === "plain") { sky = "game-art/fast/world-plain.jpg"; road = "game-art/fast/road-plain.jpg"; }
+    else if (art === "choco" || art === "castle") { sky = "game-art/fast/world-castle.jpg"; road = "game-art/fast/road-castle.jpg"; }
+    else if (art === "ice") { sky = "game-art/fast/world-plain.jpg"; road = "game-art/fast/road-ghost.jpg"; }
+    else if (art === "ghost") { sky = "game-art/fast/world-ghost.jpg"; road = "game-art/fast/road-ghost.jpg"; }
+    else if (art === "rainbow") { sky = "game-art/fast/world-rainbow.jpg"; road = "game-art/fast/road-rainbow.jpg"; }
+    return { sky: sky, road: road };
+  }
+  function warmCourse(trackId, driverIds) {
+    var t = nvdaTrack(trackId);
+    if (!t) return;
+    var art = (t.theme && (t.theme.art || t.theme.id)) || "circuit";
+    var plates = coursePlates(art);
+    need(plates.sky, "high");
+    need(plates.road, "high");
+    need("game-art/race-pylon.png?v=3", "low");
+    (driverIds || []).forEach(function (id) {
+      var d = nvdaDriver(id);
+      if (d && d.sprite) need(d.sprite, "high");
+    });
+  }
 
   function loadCareer() {
     try {
@@ -270,6 +275,8 @@
   function attachGhost() {
     var g = session.ghost;
     if (session.mode !== "tt" || !g || !g.samples || !g.samples.length) return;
+    var ghostDriver = nvdaDriver(g.driverId || racers[0].driverId);
+    if (ghostDriver && ghostDriver.sprite) need(ghostDriver.sprite, "high");
     var ghost = makeRacer(g.driverId || racers[0].driverId, racers.length, 0);
     ghost.human = false;
     ghost.you = false;
@@ -340,6 +347,7 @@
     if (session.mode === "gp") session.trackId = cupTracks[session.raceIndex].id;
     track = nvdaTrack(session.trackId);
     var ids = roster();
+    warmCourse(track.id, ids);
     var gap = session.mode === "match" ? 12 : session.mode === "battle" ? 28 : Math.min(72, track.total * 0.028);
     racers = ids.map(function (id, i) { return makeRacer(id, i, gap); });
     buildPickups();
@@ -1187,14 +1195,21 @@
   }
   function placeArt() {
     var art = (track.theme && (track.theme.art || track.theme.id)) || "circuit";
-    if (art === "beach") return { sky: worldPlain, road: roadPlain };
-    if (art === "choco") return { sky: worldCastle, road: roadCastle };
-    if (art === "ice") return { sky: worldPlain, road: roadGhost };
-    if (art === "plain") return { sky: worldPlain, road: roadPlain };
-    if (art === "ghost") return { sky: worldGhost, road: roadGhost };
-    if (art === "castle") return { sky: worldCastle, road: roadCastle };
-    if (art === "rainbow") return { sky: worldRainbow, road: roadRainbow };
-    return { sky: horizonImg, road: asphaltImg };
+    var plates = coursePlates(art);
+    return { sky: need(plates.sky), road: need(plates.road) };
+  }
+  function paintPlainRoad(theme, cx, half, y, scroll) {
+    ctx.fillStyle = "#6a6e62";
+    ctx.fillRect(cx - half, y, half * 2, 1);
+    var curb = Math.max(1, half * 0.04);
+    ctx.fillStyle = theme.edge || "#d6ff6a";
+    ctx.fillRect(cx - half, y, curb, 1);
+    ctx.fillRect(cx + half - curb, y, curb, 1);
+    if (Math.floor(scroll / 16) % 2 === 0) {
+      ctx.fillStyle = "#f4f4f4";
+      var dw = Math.max(2, half * 0.025);
+      ctx.fillRect(cx - dw, y, dw * 2, 1);
+    }
   }
   function themeLook() {
     var t = track.theme || {};
@@ -1259,16 +1274,16 @@
     ctx.restore();
   }
   function iconFor(id) {
-    if (id === "box") return boxImg;
-    if (id === "coin") return coinImg;
+    if (id === "box") return need("game-art/item-box.png");
+    if (id === "coin") return need("game-art/prop-coin.png?v=1");
     var it = nvdaItem(id);
     return it ? need(it.src) : null;
   }
   function propImg() {
     var kind = track.theme.prop;
-    if (kind === "plant") return plantImg;
-    if (kind === "bar") return barImg;
-    return rackImg;
+    if (kind === "plant") return need("game-art/prop-plant.png?v=1");
+    if (kind === "bar") return need("game-art/prop-low.png?v=1");
+    return need("game-art/prop-rack.png?v=1");
   }
   function roadQuad(a, b, leftMul, rightMul) {
     ctx.beginPath();
@@ -1355,7 +1370,7 @@
     for (hallN = 0; hallN < 7; hallN++) {
       var px = vanish + (hallN - 3) * (vw / 6.2);
       var ph = 48 + (hallN % 3) * 16;
-      drawSprite(hallN % 2 === 0 ? rackImg : heatImg, px, horizon, ph, 0);
+      drawSprite(hallN % 2 === 0 ? need("game-art/prop-rack.png?v=1") : need("game-art/prop-heat.png?v=1"), px, horizon, ph, 0);
     }
     ctx.restore();
   }
@@ -1422,14 +1437,8 @@
           ctx.fillStyle = theme.skyWash;
           ctx.fillRect(0, y, vw, 1);
         }
-      } else if ((track.theme.art || track.theme.id) === "circuit" && yardImg.complete && yardImg.naturalWidth) {
-        var yrow = ((scroll % yardImg.height) + yardImg.height) % yardImg.height;
-        var tile = Math.max(64, vw * 0.22 * t + 36);
-        var x0 = -((scroll * 3) % tile);
-        var x;
-        for (x = x0; x < vw; x += tile) ctx.drawImage(yardImg, 0, yrow, yardImg.width, 1, x, y, tile + 1, 1);
       } else {
-        ctx.fillStyle = theme.ground;
+        ctx.fillStyle = theme.ground || "#1a1e18";
         ctx.fillRect(0, y, vw, 1);
       }
       var roadPlate = place.road;
@@ -1441,8 +1450,7 @@
           ctx.fillRect(cx - half, y, half * 2, 1);
         }
       } else {
-        ctx.fillStyle = theme.road;
-        ctx.fillRect(cx - half, y, half * 2, 1);
+        paintPlainRoad(theme, cx, half, y, scroll);
       }
       var on = Math.floor((r.s + ahead) / 40) % 2 === 0;
       var lapAt = (r.s + ahead) % track.total;
@@ -1483,13 +1491,14 @@
         var qP = sample(r, distP, side * driveHalf() * 1.04, vw, vh);
         push(distP, qP.y, (function (q) {
           return function () {
-            if (!pylonImg.complete || !pylonImg.naturalWidth) return;
+            var post = need("game-art/race-pylon.png?v=3");
+            if (!post.complete || !post.naturalWidth) return;
             var ph = Math.min(vh * 0.34, vh * 0.55 * Math.pow(q.k, 0.8));
             ctx.fillStyle = "rgba(0,0,0,0.7)";
             ctx.beginPath();
             ctx.ellipse(q.x, q.y, Math.max(8, ph * 0.16), Math.max(3, ph * 0.045), 0, 0, Math.PI * 2);
             ctx.fill();
-            drawSprite(pylonImg, q.x, q.y + 1, ph, themeLook().hue);
+            drawSprite(post, q.x, q.y + 1, ph, themeLook().hue);
           };
         })(qP));
       });
@@ -1529,7 +1538,7 @@
       if (dist < 0) return;
       var q = sample(r, dist, b.lane, vw, vh);
       push(dist, q.y, function () {
-        drawBeacon(b.coin ? coinImg : boxImg, q, b.coin ? 84 : 108, b.coin ? "#ffe14a" : "#d6ff6a");
+        drawBeacon(b.coin ? need("game-art/prop-coin.png?v=1") : need("game-art/item-box.png"), q, b.coin ? 84 : 108, b.coin ? "#ffe14a" : "#d6ff6a");
       });
     });
     traps.forEach(function (t) {
@@ -1851,7 +1860,7 @@
     var b = document.createElement("button");
     b.type = "button";
     b.className = "face" + (on ? " on" : "");
-    b.innerHTML = "<img alt='' src=\"" + d.face + "\" style=\"object-position:" + (d.facePos || "center 18%") + "\"><b>" + d.name + "</b><small>" + d.blurb + "</small>";
+    b.innerHTML = "<img alt='' fetchpriority=\"low\" src=\"" + d.face + "\" style=\"object-position:" + (d.facePos || "center 18%") + "\"><b>" + d.name + "</b><small>" + d.blurb + "</small>";
     b.addEventListener("click", fn);
     return b;
   }
@@ -1865,6 +1874,7 @@
     openDrivers("DRIVER", "Pick who you drive.", function (i) {
       session.driver = i;
       session.p2driver = (i + 1) % NVDA_DRIVERS.length;
+      need(NVDA_DRIVERS[i].sprite, "high");
       if (session.mode === "gp") menuCup();
       else menuTrack();
     }, session.mode === "gp" ? menuCc : menuMode);
@@ -1986,6 +1996,7 @@
         buttons.push(choice(t.name, sub, function () {
           session.trackId = t.id;
           session.cup = c.id;
+          warmCourse(t.id, [NVDA_DRIVERS[session.driver].id]);
           if (session.mode === "tt") menuGhost();
           else begin();
         }));
