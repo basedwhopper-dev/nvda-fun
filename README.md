@@ -1,6 +1,6 @@
 # $NVDA
 
-Nut Vigorously In Dat Insane Ass. The public site for https://nvda.fun.
+Nut Vigorously In Dat Insane Ass. The public site for https://nvda.zone.
 
 Fan token on Solana. Not NVIDIA. Not financial advice.
 
