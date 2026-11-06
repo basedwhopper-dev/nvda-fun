@@ -2006,7 +2006,7 @@
     if (session.mode === "tt") buttons.push(choice("Board", "Times on this site.", function () { location.href = "tt/index.html"; }));
     openMenu(session.mode === "tt" ? "TIME TRIAL" : "COURSE", "Pick a course.", buttons);
   }
-  function boardServer() { return "http://127.0.0.1:8792/board"; }
+  function boardServer() { return "https://nvda-tt.178.104.14.254.nip.io/board"; }
   function loadBoard() {
     function localRows() {
       return (window.NVDA_TT && NVDA_TT.readLocal().rows) || [];

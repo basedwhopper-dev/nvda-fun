@@ -81,7 +81,7 @@
   function grab(url) {
     return fetch(url, { cache: "no-store" }).then(function (res) { return res.json(); }).catch(function () { return { rows: [] }; });
   }
-  Promise.all([grab("board.json"), grab("http://127.0.0.1:8792/board")]).then(function (parts) {
+  Promise.all([grab("board.json"), grab("https://nvda-tt.178.104.14.254.nip.io/board")]).then(function (parts) {
     show((parts[0] && parts[0].rows) || [], (parts[1] && parts[1].rows) || []);
   });
 })();
