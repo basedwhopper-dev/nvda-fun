@@ -1,6 +1,6 @@
 (function (root) {
   "use strict";
-  var V = "v=10";
+  var V = "v=12";
   function face(file) { return file + "?" + V; }
   function kart(file) { return "game-art/" + file + "?" + V; }
   root.NVDA_DRIVERS = [
@@ -21,7 +21,8 @@
     { id: "of", name: "Orgasm Factory", hue: 0, face: face("game-art/roster/of.jpg"), facePos: "center 10%", sprite: kart("kart-of.png"), top: 17.8, accel: 21, grip: 1.18, weight: 0.46, blurb: "Blue. Glows on the wing." },
     { id: "pika", name: "Pika", hue: 0, face: face("game-art/roster/pika.jpg"), facePos: "center 8%", sprite: kart("kart-pika.png"), top: 16.0, accel: 29, grip: 1.24, weight: 0.22, blurb: "Yellow hood. Very light." },
     { id: "sp500", name: "SP500", hue: 0, face: face("game-art/roster/sp500.jpg"), facePos: "center 12%", sprite: kart("kart-sp500.png"), top: 18.0, accel: 19, grip: 1.12, weight: 0.58, blurb: "Red. The index." },
-    { id: "aapl", name: "AAPL", hue: 0, face: face("game-art/roster/aapl.jpg"), facePos: "center 18%", sprite: kart("kart-aapl.png"), top: 17.6, accel: 21, grip: 1.16, weight: 0.5, blurb: "Silver. Holds the line." }
+    { id: "aapl", name: "AAPL", hue: 0, face: face("game-art/roster/aapl.jpg"), facePos: "center 18%", sprite: kart("kart-aapl.png"), top: 17.6, accel: 21, grip: 1.16, weight: 0.5, blurb: "Silver. Holds the line." },
+    { id: "bbc", name: "BBC", hue: 0, face: face("game-art/roster/bbc.jpg"), facePos: "center 18%", sprite: kart("kart-bbc.png"), top: 17.4, accel: 24, grip: 1.1, weight: 0.34, blurb: "Wings and a fan. Light." }
   ];
   root.nvdaDriver = function (id) {
     var list = root.NVDA_DRIVERS;

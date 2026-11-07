@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Rack Prix</title>
+<title>Big Titty Racer</title>
 <link rel="stylesheet" href="nvda.css">
 <style>
   html, body { height: 100%; margin: 0; overflow: hidden; background: #07080c; }
@@ -18,21 +18,22 @@
   .help { position: fixed; left: 14px; right: 14px; bottom: 8px; color: #8d9786; font-size: 12px; pointer-events: none; z-index: 2; }
   .overlay {
     position: fixed; inset: 0; z-index: 3; display: flex; align-items: center; justify-content: center;
-    background: rgba(5,6,8,0.62); padding: 18px;
+    background: rgba(5,6,8,0.78); padding: 18px;
   }
   .overlay.hidden { display: none; }
   .card {
-    width: min(760px, 100%);
-    max-height: min(86vh, 820px);
+    width: min(980px, 100%);
+    max-height: min(92vh, 900px);
     overflow: auto;
-    background: #10140a; border: 4px solid #1a2214;
-    box-shadow: inset 0 0 0 1px rgba(118,185,0,0.55);
-    padding: 22px 22px 18px; text-align: center;
+    background: transparent; border: 0; box-shadow: none;
+    padding: 4px 8px 8px; text-align: center; overflow-x: hidden;
   }
-  .card h1 { margin: 0 0 6px; color: var(--green); letter-spacing: 0.14em; font-size: 18px; }
-  .card p { margin: 0 0 12px; color: #d5deca; }
-  .choices { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
-  .choices button { min-width: 132px; text-align: left; }
+  .logo { width: min(720px, 86vw); max-width: 100%; height: auto; display: block; margin: 0 auto 6px; }
+  .card h1 { margin: 0 0 6px; color: #fff; letter-spacing: 0.18em; font-size: 28px; }
+  .title-screen h1 { display: none; }
+  .card p { margin: 0 0 14px; color: #d5deca; }
+  .choices { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .choices button { width: min(420px, 100%); min-width: 0; text-align: left; padding: 8px 14px; font-size: 16px; background: #10140a; border: 3px solid #1a2214; box-shadow: inset 0 0 0 1px rgba(118,185,0,0.4); }
   .choices button small { display: block; color: #9aa58c; font-size: 11px; font-weight: 500; }
   .choices button.off { opacity: 0.38; }
   .choices button.on { background: var(--green); color: #10140a; }
@@ -41,8 +42,8 @@
   table.sheet td { padding: 5px 8px; border-bottom: 1px solid rgba(118,185,0,0.18); text-align: left; }
   table.sheet tr.you td { color: #d6ff6a; font-weight: 800; }
   button.primary { background: var(--green); color: #10140a; font-weight: 800; border: 0; }
-  .choices.roster { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-  .choices.roster button.face { padding: 0 0 8px; text-align: center; min-width: 0; background: #0c100c; }
+  .choices.roster { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; width: min(860px, 100%); }
+  .choices.roster button.face { width: 100%; padding: 0 0 8px; text-align: center; min-width: 0; font-size: 13px; background: #0c100c; }
   .choices.roster button.face img { width: 100%; height: 112px; object-fit: cover; object-position: center 12%; display: block; background: #161616; }
   .choices.roster button.face b { display: block; margin-top: 6px; letter-spacing: 0.04em; font-size: 12px; line-height: 1.2; }
   .choices.roster button.face.on { box-shadow: inset 0 0 0 3px var(--green); background: #17200f; }
@@ -63,7 +64,7 @@
 <div class="top">
   <div>
     <a class="back" href="nvda_menu.html">NVDA</a>
-    <div class="sub" id="lap">Rack Prix</div>
+    <div class="sub" id="lap">Big Titty Racer</div>
   </div>
   <div style="text-align:right">
     <div class="stat" id="place"></div>
@@ -72,15 +73,16 @@
 </div>
 <div class="help" id="help">W gas · A D steer · S brake · Shift hop · Space item · Esc pause</div>
 <div class="overlay" id="overlay">
-  <div class="card">
-    <h1 id="title">RACK PRIX</h1>
+  <div class="card title-screen" id="card">
+    <img class="logo" id="logo" src="game-art/logo-racer.png?v=1" alt="Big Titty Racer">
+    <h1 id="title">BIG TITTY RACER</h1>
     <p id="blurb"></p>
     <div class="choices" id="choices"></div>
   </div>
 </div>
 <script src="kart-tracks.js?v=16"></script>
 <script src="kart-items.js"></script>
-<script src="kart-drivers.js?v=10"></script>
+<script src="kart-drivers.js?v=12"></script>
 <script src="tt/board-client.js?v=1"></script>
 <script src="kart-net.js?v=1"></script>
 <script src="kart-prix.js"></script>
@@ -1798,7 +1800,7 @@
       return;
     }
     if (!track || phase === "menu" || phase === "results" || phase === "pause") {
-      if (phase === "menu") lap.textContent = "Rack Prix";
+      if (phase === "menu") lap.textContent = "Big Titty Racer";
       return;
     }
     var you = youRacer();
@@ -1826,21 +1828,28 @@
     b.addEventListener("click", function () { if (extra !== "off") fn(); });
     return b;
   }
+  function showLogo(on) {
+    var card = document.getElementById("card");
+    var logo = document.getElementById("logo");
+    if (card) card.className = on ? "card title-screen" : "card";
+    if (logo) logo.hidden = !on;
+  }
   function openMenu(title, blurb, buttons) {
     phase = "menu";
     document.getElementById("title").textContent = title;
     document.getElementById("blurb").textContent = blurb;
+    showLogo(title === "BIG TITTY RACER");
     var box = document.getElementById("choices");
     box.className = "choices";
     box.innerHTML = "";
     buttons.forEach(function (b) { box.appendChild(b); });
     document.getElementById("overlay").classList.remove("hidden");
-    document.getElementById("lap").textContent = "Rack Prix";
+    document.getElementById("lap").textContent = "Big Titty Racer";
     document.getElementById("place").textContent = "";
     document.getElementById("coins").textContent = career.unlock150 ? "150cc open" : "";
   }
   function menuMode() {
-    openMenu("RACK PRIX", "A season of courses. Coins, items, and a place that sticks.", [
+    openMenu("BIG TITTY RACER", "A season of courses. Coins, items, and a place that sticks.", [
       choice("Grand Prix", "Coming soon.", function () {}, "off"),
       choice("Online", "Coming soon.", function () {}, "off"),
       choice("Time Trial", "Five laps. No coins, no items.", function () { session = freshSession(); session.mode = "tt"; menuDriver(); }),
@@ -1970,7 +1979,7 @@
     }
     box.appendChild(choice("Leave", "", function () { NVDA_NET.leave(); menuMode(); }));
     document.getElementById("overlay").classList.remove("hidden");
-    document.getElementById("lap").textContent = "Rack Prix";
+    document.getElementById("lap").textContent = "Big Titty Racer";
   }
   function menuCup() {
     var buttons = NVDA_CUPS.map(function (c) {
@@ -2166,6 +2175,7 @@
     });
     document.getElementById("title").textContent = title;
     document.getElementById("blurb").textContent = blurb;
+    showLogo(false);
     var box = document.getElementById("choices");
     box.className = "choices";
     box.innerHTML = "";
